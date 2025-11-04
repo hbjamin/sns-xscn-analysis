@@ -5,7 +5,7 @@
 #
 
 # Base directory
-BASE_DIR="/nfs/disk1/users/bharris/eos/sim/eos-sns-analysis/oxygen_analysis/new"
+BASE_DIR="/nfs/disk1/users/bharris/eos/analysis/sns-xscn-analysis"
 LOG_DIR="${BASE_DIR}/log"
 
 # Create log directory if it doesn't exist

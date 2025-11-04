@@ -19,8 +19,8 @@ hep.style.use("ROOT")
 # CONFIGURATION
 # ============================================================================
 
-RESULTS_DIR = "/nfs/disk1/users/bharris/eos/sim/eos-sns-analysis/oxygen_analysis/new/results"
-OUTPUT_DIR = "/nfs/disk1/users/bharris/eos/sim/eos-sns-analysis/oxygen_analysis/new"
+RESULTS_DIR = "/nfs/disk1/users/bharris/eos/analysis/sns-xscn-analysis/results"
+OUTPUT_DIR = "/nfs/disk1/users/bharris/eos/analysis/sns-xscn-analysis/"
 
 # Filter settings (set to None to include all)
 FILTER_FIT_SCENARIO = "oxygen"  # "oxygen", "gallium", or None
@@ -84,15 +84,33 @@ def load_all_results(results_dir, filter_scenario=None, filter_dimension=None):
 # PLOTTING
 # ============================================================================
 
-def plot_precision_curves(all_results, output_path):
-    """Create precision curve plot from all results - shows BOTH Minuit stat and bias-corrected RMS."""
+def plot_precision_curves(all_results, output_path, detector_filter=None):
+    """Create precision curve plot from all results - shows BOTH Minuit stat and bias-corrected RMS.
     
-    if len(all_results) == 0:
+    Args:
+        all_results: Dictionary of all results
+        output_path: Path to save plot
+        detector_filter: Optional filter - "water" or "1wbls" to plot only that detector type
+    """
+    
+    # Filter results by detector type if specified
+    if detector_filter:
+        filtered_results = {k: v for k, v in all_results.items() if k.startswith(detector_filter)}
+        if len(filtered_results) == 0:
+            print(f"WARNING: No results found for detector type '{detector_filter}'")
+            return
+        plot_results = filtered_results
+        detector_label = detector_filter.upper()
+    else:
+        plot_results = all_results
+        detector_label = "All Detectors"
+    
+    if len(plot_results) == 0:
         print("ERROR: No results to plot!")
         return
     
     # Get signal channel and exposure times from first result
-    first_result = list(all_results.values())[0]
+    first_result = list(plot_results.values())[0]
     signal_channel = first_result['signal_channel']
     exposure_times = first_result['exposure_times']
     fit_scenario = first_result['config']['fit_scenario']
@@ -102,7 +120,7 @@ def plot_precision_curves(all_results, output_path):
     fig, ax = plt.subplots(figsize=(14, 9))
     
     # Plot each config - BOTH metrics
-    for idx, (config_name, result_data) in enumerate(sorted(all_results.items())):
+    for idx, (config_name, result_data) in enumerate(sorted(plot_results.items())):
         results = result_data['results']
         
         minuit_precisions = []
@@ -156,7 +174,7 @@ def plot_precision_curves(all_results, output_path):
     # Formatting
     ax.set_xlabel("Years of Exposure", fontsize=16)
     ax.set_ylabel(f"Statistical Precision on {signal_channel} (%)", fontsize=16)
-    ax.set_title(f"Statistical Precision vs. Exposure Time\n{fit_scenario.capitalize()} Sensitivity ({fit_dimension} Fit)\nSolid = Bias-Corrected RMS, Dashed = Minuit Statistical Error", 
+    ax.set_title(f"Statistical Precision vs. Exposure Time - {detector_label}\n{fit_scenario.capitalize()} Sensitivity ({fit_dimension} Fit)\nSolid = Bias-Corrected RMS, Dashed = Minuit Statistical Error", 
                  fontsize=18)
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=9, ncol=2, loc='best')
@@ -167,7 +185,7 @@ def plot_precision_curves(all_results, output_path):
     
     plt.tight_layout()
     plt.savefig(output_path, dpi=150)
-    print(f"✓ Saved precision curves: {output_path}")
+    print(f"✓ Saved precision curves ({detector_label}): {output_path}")
     plt.close()
 
 
@@ -258,12 +276,27 @@ if __name__ == "__main__":
     # Create summary table
     create_comparison_table(all_results)
     
-    # Create precision plot
+    # Determine detector types present
+    has_water = any(k.startswith('water') for k in all_results.keys())
+    has_wbls = any(k.startswith('1wbls') for k in all_results.keys())
+    
     scenario_str = FILTER_FIT_SCENARIO if FILTER_FIT_SCENARIO else "all"
     dimension_str = FILTER_FIT_DIMENSION if FILTER_FIT_DIMENSION else "all"
-    output_path = os.path.join(OUTPUT_DIR, f"precision_curves_{scenario_str}_{dimension_str}.png")
     
-    plot_precision_curves(all_results, output_path)
+    # Create separate plots for each detector type
+    if has_water:
+        output_path = os.path.join(OUTPUT_DIR, f"precision_curves_{scenario_str}_{dimension_str}_WATER.png")
+        plot_precision_curves(all_results, output_path, detector_filter='water')
+    
+    if has_wbls:
+        output_path = os.path.join(OUTPUT_DIR, f"precision_curves_{scenario_str}_{dimension_str}_WBLS.png")
+        plot_precision_curves(all_results, output_path, detector_filter='1wbls')
+    
+    # Also create combined plot if both detector types present
+    if has_water and has_wbls:
+        output_path = os.path.join(OUTPUT_DIR, f"precision_curves_{scenario_str}_{dimension_str}_COMBINED.png")
+        plot_precision_curves(all_results, output_path, detector_filter=None)
+        print("\nℹ Note: Created separate plots for water and wbls, plus combined plot")
     
     print("\n" + "="*80)
     print("PLOTTING COMPLETE")

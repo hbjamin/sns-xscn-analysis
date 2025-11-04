@@ -1,6 +1,8 @@
 # How to use this repo
 
-- First load the reconstructed energies and directions from the root files to .npz files. A conversion factor is used to go from event total charge to reconstructed energy 
+### File paths are hardcoded inside scripts
+
+- First load the reconstructed energies and directions from the root files on nubar to .npz files. A conversion factor is used to go from event total charge to reconstructed energy 
 ```bash
 python3 preprocess_data.py
 ```

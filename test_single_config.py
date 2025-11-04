@@ -1,17 +1,14 @@
 #!/usr/bin/env python
 """
-Single Config Fitter - Parallelized Version
+Single Config Fitter - Parallelized Version 
 
 Reads in preprocessed data from npz files
-Takes in total expected events (outside 10-75 MeV range)
+Takes in total expected events 
 Filters data to 10-75 MeV range 
 Uses all statistics to make Asimov PDF
 Creates toy datasets with Poisson + flux errors
 Performs a 1D (energy) or 2d (energy + direction) nll fit with minuit
 Uses bias-corrected RMS to calculate statistical precision
-
-Usage: python test_single_config.py <detector> <shielding> <beam_power> <fit_scenario> <fit_dimension>
-Example: python test_single_config.py water 0ft 100 oxygen 2D
 """
 
 import numpy as np
@@ -22,6 +19,7 @@ from scipy.interpolate import RegularGridInterpolator, interp1d
 import os
 import sys
 import pickle
+import gc  # For explicit garbage collection
 
 hep.style.use("ROOT")
 
@@ -55,13 +53,14 @@ print("="*80)
 # ============================================================================
 
 PREPROCESSED_DIR = "/nfs/disk1/users/bharris/eos/sim/preprocessed_data"
-RESULTS_DIR = "/nfs/disk1/users/bharris/eos/sim/eos-sns-analysis/oxygen_analysis/new/results"
-PLOTS_DIR = "/nfs/disk1/users/bharris/eos/sim/eos-sns-analysis/oxygen_analysis/new"
+RESULTS_DIR = "/nfs/disk1/users/bharris/eos/analysis/sns-xscn-analysis/results"
+PLOTS_DIR = "/nfs/disk1/users/bharris/eos/analysis/sns-xscn-analysis"
+neutron_spectrum_file = "/nfs/disk1/users/bharris/eos/sim/outputs/sns/neutrons/neutron_spectra.dat"
 
 # Create results directory if it doesn't exist
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
-N_TOYS = 1000  # Number of toy datasets
+N_TOYS = 1000 
 EXPOSURE_TIMES = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0]  # Years
 
 # Flux uncertainties (only applied to neutrino channels)
@@ -157,7 +156,6 @@ def load_neutrons_and_scale(detector_name, shielding, beam_power):
     nsim = int(data['nsim'])
     
     # Apply beam power scaling
-    neutron_spectrum_file = "/nfs/disk1/users/bharris/eos/sim/outputs/sns/neutrons/neutron_spectra.dat"
     
     if not os.path.exists(neutron_spectrum_file):
         print(f"    WARNING: Spectrum file not found, using uniform scaling")
@@ -581,61 +579,75 @@ def run_scenario_analysis(channel_cache, shielding, beam_power, detector_name):
         print(f"EXPOSURE: {years} years")
         print(f"{'='*60}")
         
-        # Make toy datasets with Poisson + flux errors
-        print(f"\nGenerating {N_TOYS} toy datasets with Poisson + flux errors...")
-        toy_datasets = make_toy_datasets_with_poisson_and_flux(
-            filtered_data, filtered_rates, years, N_TOYS
-        )
-        
-        # Make toy histograms
-        toygroups_hist = []
-        for i in range(N_TOYS):
-            if FIT_DIMENSION == "1D":
-                toy_hist = {key: np.histogram(toy_datasets[key][i][0], BINNING)[0] 
-                           for key in filtered_data}
-            else:
-                toy_hist = {key: np.histogram2d(toy_datasets[key][i][0], toy_datasets[key][i][1], BINNING)[0] 
-                           for key in filtered_data}
-            toygroups_hist.append(toy_hist)
-        
-        # Normalize and scale Asimov
+        # Normalize and scale Asimov (do this once)
         asimov_normalized, asimov_scaled = normalize_and_scale_asimov(asimov_hist, years, filtered_rates)
         
-        # Make interpolated PDFs
+        # Make interpolated PDFs (do this once)
         norm_pdf_luts, pdfs, bin_centers = make_normalized_interpolated_pdf(asimov_normalized)
         
-        # Fit each toy dataset
-        print(f"\nFitting {N_TOYS} toys...")
+        # Calculate total expected events (needed for fitting)
         total_events = sum(filtered_rates[ch] for ch in filtered_rates.keys())
+        print(f"\n  Total expected events (filtered): {total_events:,.1f}/year")
         
-        print(f"  Total expected events (filtered): {total_events:,.1f}/year")
-        
+        # Process toys ONE BY ONE to save memory
+        print(f"\nGenerating and fitting {N_TOYS} toy datasets (one at a time to save memory)...")
         fit_results = []
-        for i in range(N_TOYS):
-            # Sum all channels to make total data histogram
-            fit_data = np.sum([toygroups_hist[i][ch] for ch in filtered_data.keys()], axis=0)
+        
+        for toy_idx in range(N_TOYS):
+            # Generate ONE toy dataset with Poisson + flux errors
+            toy_datasets = make_toy_datasets_with_poisson_and_flux(
+                filtered_data, filtered_rates, years, ngroups=1
+            )
             
-            if i == 0:
-                print(f"  Example toy 0:")
+            # Make histogram for this toy
+            if FIT_DIMENSION == "1D":
+                toy_hist = {key: np.histogram(toy_datasets[key][0][0], BINNING)[0] 
+                           for key in filtered_data}
+            else:
+                toy_hist = {key: np.histogram2d(toy_datasets[key][0][0], toy_datasets[key][0][1], BINNING)[0] 
+                           for key in filtered_data}
+            
+            # Sum all channels to make total data histogram for fitting
+            fit_data = np.sum([toy_hist[ch] for ch in filtered_data.keys()], axis=0)
+            
+            # Print first toy as example
+            if toy_idx == 0:
+                print(f"\n  Example toy 0:")
                 for ch in filtered_data.keys():
-                    print(f"    {ch}: {np.sum(toygroups_hist[i][ch]):.0f} events")
+                    print(f"    {ch}: {np.sum(toy_hist[ch]):.0f} events")
             
+            # Fit this toy
             try:
-                m = fit_with_extended_binned_nll(fit_data, channels, norm_pdf_luts, years, total_events, debug=(i==0))
+                m = fit_with_extended_binned_nll(fit_data, channels, norm_pdf_luts, years, total_events, debug=(toy_idx==0))
                 fit_results.append(m)
                 
-                if i == 0:
+                if toy_idx == 0:
                     print(f"\n  Example fit result:")
                     for ch in channels:
                         print(f"    {ch}: {m.values[ch]:.1f} ± {m.errors[ch]:.1f}")
             except Exception as e:
-                if i == 0:
-                    print(f"  ERROR in fit {i+1}:")
+                if toy_idx == 0:
+                    print(f"  ERROR in fit {toy_idx+1}:")
                     import traceback
                     traceback.print_exc()
                 else:
-                    print(f"  WARNING: Fit {i+1} failed: {e}")
+                    print(f"  WARNING: Fit {toy_idx+1} failed: {e}")
                 continue
+            
+            # FREE MEMORY - delete large objects after each fit
+            del toy_datasets
+            del toy_hist
+            del fit_data
+            
+            # Explicit garbage collection every 50 toys to be extra safe
+            if (toy_idx + 1) % 50 == 0:
+                gc.collect()
+            
+            # Print progress every 100 toys (helpful for large N_TOYS)
+            if (toy_idx + 1) % 100 == 0:
+                print(f"  Progress: {toy_idx + 1}/{N_TOYS} toys completed...")
+        
+        print(f"  Finished fitting all {N_TOYS} toys!")
         
         # Store results 
         if len(fit_results) == 0:
