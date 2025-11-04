@@ -1,52 +1,29 @@
 #!/usr/bin/env python
-"""
-Plot Combined Results
-
-Reads all saved result files and creates combined precision curves.
-Can filter by fit_scenario and fit_dimension.
-"""
 
 import numpy as np
 import matplotlib.pyplot as plt
 import mplhep as hep
 import pickle
 import glob
-import os
+
+import config as cfg
 
 hep.style.use("ROOT")
 
-# ============================================================================
-# CONFIGURATION
-# ============================================================================
-
-RESULTS_DIR = "/nfs/disk1/users/bharris/eos/analysis/sns-xscn-analysis/results"
-OUTPUT_DIR = "/nfs/disk1/users/bharris/eos/analysis/sns-xscn-analysis/"
-
-# Filter settings (set to None to include all)
-FILTER_FIT_SCENARIO = "oxygen"  # "oxygen", "gallium", or None
-FILTER_FIT_DIMENSION = "2D"     # "1D", "2D", or None
-
-# Plot settings
-COLORS = plt.cm.tab10.colors
-MARKERS = ['o', 's', '^', 'v', 'D', 'P', '*', 'X', 'h', 'p']
-
-# ============================================================================
-# LOAD RESULTS
-# ============================================================================
+# filter settings (set to none to process all)
+FILTER_FIT_SCENARIO = "oxygen"  # oxygen/gallium/none
+FILTER_FIT_DIMENSION = "2D"     # 1d/2d/none
 
 def load_all_results(results_dir, filter_scenario=None, filter_dimension=None):
-    """Load all result pickle files from directory."""
-    
-    result_files = glob.glob(os.path.join(results_dir, "results_*.pkl"))
+    result_files = sorted(results_dir.glob("results_*.pkl"))
     
     if len(result_files) == 0:
-        print(f"ERROR: No result files found in {results_dir}")
+        print(f"error: no result files found in {results_dir}")
         return {}
     
-    print(f"Found {len(result_files)} result files")
+    print(f"found {len(result_files)} result files")
     
     all_results = {}
-    
     for result_file in result_files:
         try:
             with open(result_file, 'rb') as f:
@@ -54,16 +31,16 @@ def load_all_results(results_dir, filter_scenario=None, filter_dimension=None):
             
             config = data['config']
             
-            # Apply filters
+            # apply filters
             if filter_scenario is not None and config['fit_scenario'] != filter_scenario:
                 continue
             if filter_dimension is not None and config['fit_dimension'] != filter_dimension:
                 continue
             
-            # Create config key
-            config_key = f"{config['detector']}_{config['shielding']}_{config['beam_power']}MW"
+            # create config key
+            config_key = f"{config['detector']}_{config['shielding']}_{config['neutrons_per_mw']}npmw"
             
-            # Store data
+            # store data
             all_results[config_key] = {
                 'config': config,
                 'signal_channel': data['signal_channel'],
@@ -71,55 +48,43 @@ def load_all_results(results_dir, filter_scenario=None, filter_dimension=None):
                 'results': data['results']
             }
             
-            print(f"  Loaded: {config_key} ({config['fit_scenario']}, {config['fit_dimension']})")
+            print(f"  loaded: {config_key} ({config['fit_scenario']}, {config['fit_dimension']})")
             
         except Exception as e:
-            print(f"  ERROR loading {result_file}: {e}")
+            print(f"  error loading {result_file}: {e}")
             continue
     
     return all_results
 
-
-# ============================================================================
-# PLOTTING
-# ============================================================================
-
 def plot_precision_curves(all_results, output_path, detector_filter=None):
-    """Create precision curve plot from all results - shows BOTH Minuit stat and bias-corrected RMS.
-    
-    Args:
-        all_results: Dictionary of all results
-        output_path: Path to save plot
-        detector_filter: Optional filter - "water" or "1wbls" to plot only that detector type
-    """
-    
-    # Filter results by detector type if specified
+    # filter results by detector type if specified
     if detector_filter:
-        filtered_results = {k: v for k, v in all_results.items() if k.startswith(detector_filter)}
+        filtered_results = {k: v for k, v in all_results.items() 
+                           if k.startswith(detector_filter)}
         if len(filtered_results) == 0:
-            print(f"WARNING: No results found for detector type '{detector_filter}'")
+            print(f"warning: no results found for detector type '{detector_filter}'")
             return
         plot_results = filtered_results
         detector_label = detector_filter.upper()
     else:
         plot_results = all_results
-        detector_label = "All Detectors"
+        detector_label = "all detectors"
     
     if len(plot_results) == 0:
-        print("ERROR: No results to plot!")
+        print("error: no results to plot!")
         return
     
-    # Get signal channel and exposure times from first result
+    # get signal channel and exposure times from first result
     first_result = list(plot_results.values())[0]
     signal_channel = first_result['signal_channel']
     exposure_times = first_result['exposure_times']
     fit_scenario = first_result['config']['fit_scenario']
     fit_dimension = first_result['config']['fit_dimension']
     
-    # Create figure
+    # create figure
     fig, ax = plt.subplots(figsize=(14, 9))
     
-    # Plot each config - BOTH metrics
+    # plot each config
     for idx, (config_name, result_data) in enumerate(sorted(plot_results.items())):
         results = result_data['results']
         
@@ -128,21 +93,21 @@ def plot_precision_curves(all_results, output_path, detector_filter=None):
         
         for years in exposure_times:
             if years in results and len(results[years]) > 0:
-                # Get errors and fitted values from valid fits
+                # get errors and fitted values from valid fits
                 errors = [r['error'] for r in results[years] if r['valid']]
                 fitted_vals = [r['fitted'] for r in results[years] if r['valid']]
                 
                 if len(errors) > 0 and len(fitted_vals) > 0:
-                    # Get true value
+                    # get true value
                     true_val = results[years][0]['true_value']
                     
-                    # Calculate Minuit statistical precision
+                    # calculate minuit statistical precision
                     avg_error = np.mean(errors)
                     avg_fitted = np.mean(fitted_vals)
                     minuit_precision = 100 * avg_error / avg_fitted
                     minuit_precisions.append(minuit_precision)
                     
-                    # Calculate bias-corrected RMS
+                    # calculate bias-corrected rms
                     bias = avg_fitted - true_val
                     corrected_rms = np.sqrt(np.mean([(v - bias - true_val)**2 for v in fitted_vals]))
                     bias_corr_precision = 100 * corrected_rms / true_val
@@ -154,62 +119,56 @@ def plot_precision_curves(all_results, output_path, detector_filter=None):
                 minuit_precisions.append(np.nan)
                 bias_corrected_precisions.append(np.nan)
         
-        # Plot both curves with same color but different styles
-        color = COLORS[idx % len(COLORS)]
-        marker = MARKERS[idx % len(MARKERS)]
+        # plot with solid lines only (no markers)
+        color = list(cfg.CHANNEL_COLORS.values())[idx % len(cfg.CHANNEL_COLORS)]
         
-        # Bias-corrected RMS (solid line, filled marker)
+        # bias-corrected rms (solid line)
         ax.plot(exposure_times, bias_corrected_precisions, 
-                marker=marker, linestyle='-', 
-                label=f"{config_name} (Bias-Corr RMS)", 
-                linewidth=2.5, markersize=9, color=color, alpha=0.9)
+                linestyle='-', 
+                label=f"{config_name} (bias-corr rms)", 
+                linewidth=2, color=color)
         
-        # Minuit stat (dashed line, hollow marker)
+        # minuit stat (dashed line)
         ax.plot(exposure_times, minuit_precisions, 
-                marker=marker, linestyle='--', 
-                label=f"{config_name} (Minuit Stat)", 
-                linewidth=2, markersize=8, color=color, alpha=0.6,
-                fillstyle='none', markeredgewidth=2)
+                linestyle='--',
+                label=f"{config_name} (minuit avg err)", 
+                linewidth=2, color=color)
     
-    # Formatting
-    ax.set_xlabel("Years of Exposure", fontsize=16)
-    ax.set_ylabel(f"Statistical Precision on {signal_channel} (%)", fontsize=16)
-    ax.set_title(f"Statistical Precision vs. Exposure Time - {detector_label}\n{fit_scenario.capitalize()} Sensitivity ({fit_dimension} Fit)\nSolid = Bias-Corrected RMS, Dashed = Minuit Statistical Error", 
-                 fontsize=18)
+    # formatting
+    signal_label = cfg.SIGNAL_LABELS.get(signal_channel, signal_channel)
+    ax.set_xlabel("sns years", fontsize=16)
+    ax.set_ylabel(f"statistical precision on {signal_label} (%)", fontsize=16)
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=9, ncol=2, loc='best')
     ax.tick_params(labelsize=14)
     
-    # Set reasonable axis limits
+    # set reasonable axis limits
     ax.set_xlim(min(exposure_times) - 0.1, max(exposure_times) + 0.1)
     
     plt.tight_layout()
     plt.savefig(output_path, dpi=150)
-    print(f"✓ Saved precision curves ({detector_label}): {output_path}")
+    print(f"saved precision curves ({detector_label}): {output_path}")
     plt.close()
 
-
 def create_comparison_table(all_results):
-    """Create a summary table of all results."""
-    
     if len(all_results) == 0:
-        print("ERROR: No results to summarize!")
+        print("error: no results to summarize!")
         return
     
     print("\n" + "="*140)
-    print("SUMMARY TABLE")
+    print("summary table")
     print("="*140)
     
-    # Get exposure times from first result
+    # get exposure times from first result
     first_result = list(all_results.values())[0]
     exposure_times = first_result['exposure_times']
     signal_channel = first_result['signal_channel']
     
-    # Print header
-    print(f"{'Config':<30} {'Years':<8} {'Minuit Stat (%)':>18} {'Avg Bias':>15} {'Bias-Corr RMS (%)':>20}")
+    # print header
+    print(f"{'config':<30} {'years':<8} {'minuit stat (%)':>18} {'avg bias':>15} {'bias-corr rms (%)':>20}")
     print("-"*140)
     
-    # Print each config
+    # print each config
     for config_name, result_data in sorted(all_results.items()):
         results = result_data['results']
         
@@ -219,85 +178,81 @@ def create_comparison_table(all_results):
                 fitted_vals = [r['fitted'] for r in results[years] if r['valid']]
                 
                 if len(errors) > 0 and len(fitted_vals) > 0:
-                    # Get metrics
+                    # get metrics
                     avg_error = np.mean(errors)
                     avg_fitted = np.mean(fitted_vals)
                     true_val = results[years][0]['true_value']
                     
-                    # Calculate bias
+                    # calculate bias
                     bias = avg_fitted - true_val
                     
-                    # Calculate bias-corrected RMS around truth
+                    # calculate bias-corrected rms around truth
                     corrected_rms = np.sqrt(np.mean([(v - bias - true_val)**2 for v in fitted_vals]))
                     
-                    # Minuit statistical precision
+                    # minuit statistical precision
                     minuit_stat_precision = 100 * avg_error / avg_fitted
                     
-                    # Bias-corrected RMS as percentage of true value
+                    # bias-corrected rms as percentage of true value
                     corrected_rms_percent = 100 * corrected_rms / true_val
                     
-                    print(f"{config_name:<30} {years:<8.1f} {minuit_stat_precision:>18.2f} {bias:>15.1f} {corrected_rms_percent:>20.2f}")
+                    print(f"{config_name:<30} {years:<8.1f} {minuit_stat_precision:>18.2f} "
+                          f"{bias:>15.1f} {corrected_rms_percent:>20.2f}")
                 else:
-                    print(f"{config_name:<30} {years:<8.1f} {'N/A':>18} {'N/A':>15} {'N/A':>20}")
+                    print(f"{config_name:<30} {years:<8.1f} {'n/a':>18} {'n/a':>15} {'n/a':>20}")
             else:
-                print(f"{config_name:<30} {years:<8.1f} {'N/A':>18} {'N/A':>15} {'N/A':>20}")
+                print(f"{config_name:<30} {years:<8.1f} {'n/a':>18} {'n/a':>15} {'n/a':>20}")
     
     print("="*140)
-    print(f"Minuit Stat = Average Minuit error as % of fitted value")
-    print(f"Bias-Corr RMS = Bias-corrected RMS on {signal_channel} as % of true value (plotted metric)")
+    print(f"minuit stat = average minuit error as % of fitted value")
+    print(f"bias-corr rms = bias-corrected rms on {signal_channel} as % of true value")
     print()
-
-
-# ============================================================================
-# MAIN
-# ============================================================================
 
 if __name__ == "__main__":
     
     print("="*80)
-    print("PLOTTING COMBINED RESULTS")
+    print("plotting combined results")
     print("="*80)
-    print(f"Results directory: {RESULTS_DIR}")
-    print(f"Filter scenario: {FILTER_FIT_SCENARIO}")
-    print(f"Filter dimension: {FILTER_FIT_DIMENSION}")
+    print(f"results directory: {cfg.RESULTS_DIR}")
+    print(f"filter scenario: {FILTER_FIT_SCENARIO}")
+    print(f"filter dimension: {FILTER_FIT_DIMENSION}")
     print()
     
-    # Load all results
-    all_results = load_all_results(RESULTS_DIR, 
+    # load all results
+    all_results = load_all_results(cfg.RESULTS_DIR, 
                                     filter_scenario=FILTER_FIT_SCENARIO,
                                     filter_dimension=FILTER_FIT_DIMENSION)
     
     if len(all_results) == 0:
-        print("\nNo results found matching filters!")
+        print("\nno results found matching filters!")
         exit(1)
     
-    print(f"\nLoaded {len(all_results)} configurations")
+    print(f"\nloaded {len(all_results)} configurations")
     
-    # Create summary table
+    # create summary table
     create_comparison_table(all_results)
     
-    # Determine detector types present
+    # determine detector types present
     has_water = any(k.startswith('water') for k in all_results.keys())
     has_wbls = any(k.startswith('1wbls') for k in all_results.keys())
     
     scenario_str = FILTER_FIT_SCENARIO if FILTER_FIT_SCENARIO else "all"
     dimension_str = FILTER_FIT_DIMENSION if FILTER_FIT_DIMENSION else "all"
     
-    # Create separate plots for each detector type
+    # create separate plots for each detector type
     if has_water:
-        output_path = os.path.join(OUTPUT_DIR, f"precision_curves_{scenario_str}_{dimension_str}_WATER.png")
+        output_path = cfg.HISTS_DIR / f"precision_curves_{scenario_str}_{dimension_str}_water.png"
         plot_precision_curves(all_results, output_path, detector_filter='water')
     
     if has_wbls:
-        output_path = os.path.join(OUTPUT_DIR, f"precision_curves_{scenario_str}_{dimension_str}_WBLS.png")
+        output_path = cfg.HISTS_DIR / f"precision_curves_{scenario_str}_{dimension_str}_wbls.png"
         plot_precision_curves(all_results, output_path, detector_filter='1wbls')
     
-    # Also create combined plot if both detector types present
+    # also create combined plot if both detector types present
     if has_water and has_wbls:
-        output_path = os.path.join(OUTPUT_DIR, f"precision_curves_{scenario_str}_{dimension_str}_COMBINED.png")
+        output_path = cfg.HISTS_DIR / f"precision_curves_{scenario_str}_{dimension_str}_combined.png"
         plot_precision_curves(all_results, output_path, detector_filter=None)
-        print("\nℹ Note: Created separate plots for water and wbls, plus combined plot")
+        print("\nℹ note: created separate plots for water and wbls, plus combined plot")
     
     print("\n" + "="*80)
-    print("PLOTTING COMPLETE")
+    print("plotting complete")
     print("="*80)

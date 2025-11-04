@@ -2,23 +2,26 @@
 """
 Store reconstructed energy and direction in compressed .npz files
 for all events from specified root files with Nhit > 0
+
+Updated: Now uses relative paths from config
 """
 
 import numpy as np
 import uproot
 import awkward as ak
 import glob
-import os
 from datetime import datetime
 
-# Output directory for preprocessed files
-OUTPUT_DIR = "/nfs/disk1/users/bharris/eos/sim/preprocessed_data"
+# Import config for paths
+import config as cfg
 
 # Energy reconstruction factors for total charge
-ALPHA_WATER = 0.04138615778199661
-ALPHA_1WBLS = 0.010945997573964417
+ALPHA_WATER = cfg.ALPHA_WATER
+ALPHA_1WBLS = cfg.ALPHA_1WBLS
 
 # Channel configurations
+# Note: These root file paths still need to be configured based on your system
+# They are left as absolute paths since they reference data outside the project
 CHANNELS = {
     'water': {
         'alpha': ALPHA_WATER, 
@@ -54,6 +57,27 @@ CHANNELS = {
 
 
 def preprocess_channel(file_pattern, alpha, output_path, reverseXdir=False):
+    """
+    Process channel data and save to compressed npz file.
+    
+    Parameters
+    ----------
+    file_pattern : str
+        Glob pattern for root files
+    alpha : float
+        Energy calibration constant
+    output_path : Path
+        Where to save the npz file
+    reverseXdir : bool
+        Whether to reverse direction
+        
+    Returns
+    -------
+    ntrig : int
+        Number of triggered events
+    nsim : int
+        Number of simulated events
+    """
     files = sorted(glob.glob(file_pattern))
     
     if len(files) == 0:
@@ -122,7 +146,7 @@ def preprocess_channel(file_pattern, alpha, output_path, reverseXdir=False):
     np.savez_compressed(output_path, energy=energy, direction=direction, ntrig=ntrig, nsim=nsim)
     
     elapsed = (datetime.now() - start_time).total_seconds()
-    file_size_mb = os.path.getsize(output_path) / 1e6
+    file_size_mb = output_path.stat().st_size / 1e6
     
     print(f"  ✓ Saved {ntrig:,} events to {output_path}")
     print(f"    File size: {file_size_mb:.1f} MB")
@@ -136,6 +160,22 @@ def preprocess_neutron_file(file_path, alpha, output_path):
     """
     Neutron scaling by beam power happens during analysis, not here.
     Just extract the raw energy/direction/mcke for later resampling.
+    
+    Parameters
+    ----------
+    file_path : str
+        Path to neutron root file
+    alpha : float
+        Energy calibration constant
+    output_path : Path
+        Where to save the npz file
+        
+    Returns
+    -------
+    ntrig : int
+        Number of triggered events
+    nsim : int
+        Number of simulated events
     """
     if not os.path.exists(file_path):
         print(f"  ERROR: File not found: {file_path}")
@@ -182,7 +222,7 @@ def preprocess_neutron_file(file_path, alpha, output_path):
                            nsim=nsim)
         
         elapsed = (datetime.now() - start_time).total_seconds()
-        file_size_mb = os.path.getsize(output_path) / 1e6
+        file_size_mb = output_path.stat().st_size / 1e6
         
         print(f"  ✓ Saved {ntrig:,} neutron events to {output_path}")
         print(f"    File size: {file_size_mb:.1f} MB")
@@ -198,15 +238,16 @@ def preprocess_neutron_file(file_path, alpha, output_path):
 
 
 def main():
+    """Main preprocessing pipeline."""
     
     print("=" * 80)
     print("SNS DATA PREPROCESSING")
     print("=" * 80)
-    print(f"Output directory: {OUTPUT_DIR}")
+    print(f"Output directory: {cfg.PREPROCESSED_DIR}")
     print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
-    # Create output directory
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    # Ensure output directory exists
+    cfg.PREPROCESSED_DIR.mkdir(parents=True, exist_ok=True)
     
     # Process each detector
     for detector_name, detector_config in CHANNELS.items():
@@ -226,10 +267,10 @@ def main():
             print(f"\n{channel_name}:")
             
             output_filename = f"{detector_name}_{channel_name}.npz"
-            output_path = os.path.join(OUTPUT_DIR, output_filename)
+            output_path = cfg.PREPROCESSED_DIR / output_filename
             
             # Check if already processed
-            if os.path.exists(output_path):
+            if output_path.exists():
                 print(f"  Already processed: {output_path}")
                 print(f"  Delete this file if you want to reprocess")
                 continue
@@ -247,10 +288,10 @@ def main():
             print(f"\n{shielding}:")
             
             output_filename = f"{detector_name}_neutrons_{shielding}.npz"
-            output_path = os.path.join(OUTPUT_DIR, output_filename)
+            output_path = cfg.PREPROCESSED_DIR / output_filename
             
             # Check if already processed
-            if os.path.exists(output_path):
+            if output_path.exists():
                 print(f"  Already processed: {output_path}")
                 print(f"  Delete this file if you want to reprocess")
                 continue
@@ -261,19 +302,20 @@ def main():
     print("PREPROCESSING COMPLETE!")
     print("=" * 80)
     print(f"Finished: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"\nPreprocessed files saved to: {OUTPUT_DIR}")
+    print(f"\nPreprocessed files saved to: {cfg.PREPROCESSED_DIR}")
     print("\nYou can now run the analysis with these files (should be ~100x faster!)")
     
     # List all created files
     print(f"\nCreated files:")
-    npz_files = sorted(glob.glob(os.path.join(OUTPUT_DIR, "*.npz")))
+    npz_files = sorted(cfg.PREPROCESSED_DIR.glob("*.npz"))
     total_size_mb = 0
     for npz_file in npz_files:
-        size_mb = os.path.getsize(npz_file) / 1e6
+        size_mb = npz_file.stat().st_size / 1e6
         total_size_mb += size_mb
-        print(f"  {os.path.basename(npz_file):40s} {size_mb:>8.1f} MB")
+        print(f"  {npz_file.name:40s} {size_mb:>8.1f} MB")
     print(f"\nTotal size: {total_size_mb:.1f} MB")
 
 
 if __name__ == "__main__":
+    import os  # Import here for file operations
     main()

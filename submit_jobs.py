@@ -1,18 +1,15 @@
 #!/bin/bash
-#
-# Submit all sensitivity analysis jobs to SLURM
-# This script loops through all configurations and submits one job per config
-#
 
-# Base directory
-BASE_DIR="/nfs/disk1/users/bharris/eos/analysis/sns-xscn-analysis"
+# get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASE_DIR="${SCRIPT_DIR}"
 LOG_DIR="${BASE_DIR}/log"
 
-# Create log directory if it doesn't exist
-mkdir -p ${LOG_DIR}
+# create log directory if it doesn't exist
+mkdir -p "${LOG_DIR}"
 
-# Define all configurations
-# Format: detector shielding beam_power
+# define all configurations
+# format: detector shielding neutrons_per_mw
 CONFIGS=(
     "water 0ft 10"
     "water 0ft 100"
@@ -20,37 +17,33 @@ CONFIGS=(
     "water 1ft 100"
     "water 3ft 10"
     "water 3ft 100"
-    "1wbls 0ft 10"
-    "1wbls 0ft 100"
-    "1wbls 1ft 10"
-    "1wbls 1ft 100"
-    "1wbls 3ft 10"
-    "1wbls 3ft 100"
 )
 
-# Fit scenarios to run (can be "oxygen", "gallium", or both)
+# fit scenarios to run
 FIT_SCENARIOS=("oxygen")
 
-# Fit dimensions to run (can be "1D", "2D", or both)
+# fit dimensions to run
 FIT_DIMENSIONS=("1D" "2D")
 
-# Loop through all combinations
-echo "Submitting jobs..."
+# loop through all combinations
+echo "submitting jobs..."
 echo "=================="
+echo "base directory: ${BASE_DIR}"
+echo ""
 
 for config in "${CONFIGS[@]}"; do
-    # Parse config
-    read -r detector shielding beam_power <<< "$config"
+    # parse config
+    read -r detector shielding neutrons_per_mw <<< "$config"
     
     for fit_scenario in "${FIT_SCENARIOS[@]}"; do
         for fit_dimension in "${FIT_DIMENSIONS[@]}"; do
             
-            # Create job name
-            job_name="${detector}_${shielding}_${beam_power}MW_${fit_scenario}_${fit_dimension}"
+            # create job name
+            job_name="${detector}_${shielding}_${neutrons_per_mw}npmw_${fit_scenario}_${fit_dimension}"
             log_file="${LOG_DIR}/${job_name}_%j.log"
             
-            # Submit job
-            sbatch <<EOF
+            # submit job
+            sbatch <<INNEREOF
 #!/bin/bash
 #SBATCH --job-name=${job_name}
 #SBATCH --ntasks=1
@@ -60,40 +53,44 @@ for config in "${CONFIGS[@]}"; do
 #SBATCH --output=${log_file}
 #SBATCH --partition=ubuntu_short
 
-# Load conda and activate environment
+# load conda and activate environment
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate mypythonenv
 
-# Change to working directory
+# change to working directory
 cd ${BASE_DIR}
 
-# Print some info
-echo "Running on host: \$(hostname)"
-echo "Job ID: \$SLURM_JOB_ID"
-echo "Cores: \$SLURM_CPUS_PER_TASK"
-echo "Conda environment: \$CONDA_DEFAULT_ENV"
+# print some info
+echo "running on host: \$(hostname)"
+echo "job id: \$SLURM_JOB_ID"
+echo "cores: \$SLURM_CPUS_PER_TASK"
+echo "conda environment: \$CONDA_DEFAULT_ENV"
+echo "working directory: \$(pwd)"
 echo ""
-echo "Configuration:"
-echo "  Detector: ${detector}"
-echo "  Shielding: ${shielding}"
-echo "  Beam Power: ${beam_power} MW"
-echo "  Fit Scenario: ${fit_scenario}"
-echo "  Fit Dimension: ${fit_dimension}"
+echo "configuration:"
+echo "  detector: ${detector}"
+echo "  shielding: ${shielding}"
+echo "  neutrons per mw: ${neutrons_per_mw}"
+echo "  fit scenario: ${fit_scenario}"
+echo "  fit dimension: ${fit_dimension}"
 echo ""
 
-# Run the analysis
-python test_single_config.py ${detector} ${shielding} ${beam_power} ${fit_scenario} ${fit_dimension}
+# run the analysis
+python test_single_config.py ${detector} ${shielding} ${neutrons_per_mw} ${fit_scenario} ${fit_dimension}
 
-EOF
+INNEREOF
             
-            echo "Submitted: ${job_name}"
+            echo "submitted: ${job_name}"
             
         done
     done
 done
 
 echo "=================="
-echo "All jobs submitted!"
+echo "all jobs submitted!"
 echo ""
-echo "To check job status: squeue -u \$USER"
-echo "To check logs: ls -lth ${LOG_DIR}/"
+echo "to check job status: squeue -u \$USER"
+echo "to check logs: ls -lth ${LOG_DIR}/"
+echo ""
+echo "after all jobs complete, run:"
+echo "  python plot_results.py"
