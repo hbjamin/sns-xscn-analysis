@@ -28,19 +28,28 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
         print(f"  skipped: {e}")
         return None, None
     
-    # Apply smoothing to the entire dataset before splitting
-    print("\nApplying smoothing to the entire dataset before splitting:")
-    for key in energy_direction_data:
-        if key in cfg.SMOOTH_ASIMOV['channels']:
-            print(f"  Smoothing {key}...")
-            energy_direction_data[key] = au.smooth_energy_direction_data(
-                energy_direction_data[key], cfg.SMOOTH_ASIMOV['method'], cfg.SMOOTH_ASIMOV['params']
-            )
+    # Apply smoothing to the entire dataset BEFORE splitting (if enabled)
+    if cfg.SMOOTH_ASIMOV['enabled']:
+        print("\napplying smoothing to entire dataset before splitting:")
+        for key in energy_direction_data:
+            if key in cfg.SMOOTH_ASIMOV['channels']:
+                print(f"  smoothing {key} with {cfg.SMOOTH_ASIMOV['method']}...")
+                energy_direction_data[key] = au.smooth_energy_direction_data(
+                    energy_direction_data[key], 
+                    cfg.SMOOTH_ASIMOV['method'], 
+                    cfg.SMOOTH_ASIMOV['params']
+                )
     
     # filter data to analysis range (now returns neutron_metadata for year scaling)
     filtered_data, filtered_rates, neutron_metadata = au.filter_data_to_analysis_range(
         energy_direction_data, cfg.EVENT_RATES_TOTAL
     )
+    
+    # Calculate neutron rate here (once for all exposure times)
+    if neutron_metadata:
+        neutron_rate = au.calculate_neutron_rate_per_year(neutron_metadata, neutrons_per_mw)
+        filtered_rates['neutrons'] = neutron_rate
+        print(f"\nneutron rate set to: {neutron_rate:.1f}/year")
     
     # IMPORTANT: split data into asimov and toy pools (no overlap!)
     print(f"\nsplitting data: {cfg.ASIMOV_FRACTION:.0%} for asimov, "
@@ -88,7 +97,7 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
         if years == cfg.EXPOSURE_TIMES[0]:
             output_path = (cfg.HISTS_DIR / 
                           f'asimov_projections_{detector_name}_{neutrons_per_mw}npmw_{shielding}_{cfg.FIT_DIMENSION}.png')
-            pu.plot_asimov_projections(asimov_scaled, years, output_path)
+            pu.plot_asimov_projections(asimov_scaled, years, output_path, cfg.FIT_DIMENSION)
 
         # calculate total expected events
         total_events = sum(filtered_rates[ch] for ch in filtered_rates.keys())
@@ -98,8 +107,6 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
         print(f"\ngenerating and fitting {cfg.N_TOYS} toy datasets...")
         fit_results = []
         last_toy_hist = None
-
-        ##### FIXME should smooth entire neutron sample BEFORE splitting so applied to both 
         
         for toy_idx in range(cfg.N_TOYS):
             # generate one toy dataset from toy pool
@@ -137,7 +144,7 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
                 if toy_idx == 0:
                     print(f"\nexample fit result:")
                     for ch in channels:
-                        print(f"  {ch}: {m.values[ch]:.1f} Â± {m.errors[ch]:.1f}")
+                        print(f"  {ch}: {m.values[ch]:.1f} ± {m.errors[ch]:.1f}")
             except Exception as e:
                 print(f"  error: fit {toy_idx+1} failed: {e}")
                 continue
@@ -166,7 +173,7 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
             output_path = (cfg.HISTS_DIR / 
                           f'asimov_toys_{detector_name}_{neutrons_per_mw}npmw_{shielding}_{years}yr_{cfg.FIT_DIMENSION}.png')
             pu.plot_asimov_and_fit_group_projections(
-                asimov_scaled, [last_toy_hist], years, output_path, n_toys_to_plot=1
+                asimov_scaled, [last_toy_hist], years, output_path, cfg.FIT_DIMENSION, n_toys_to_plot=1
             )
             del last_toy_hist
         
@@ -218,6 +225,10 @@ if __name__ == "__main__":
     print(f"n_toys: {cfg.N_TOYS}")
     print(f"exposure times: {cfg.EXPOSURE_TIMES}")
     print(f"asimov fraction: {cfg.ASIMOV_FRACTION:.0%}")
+    print(f"smoothing enabled: {cfg.SMOOTH_ASIMOV['enabled']}")
+    if cfg.SMOOTH_ASIMOV['enabled']:
+        print(f"  method: {cfg.SMOOTH_ASIMOV['method']}")
+        print(f"  channels: {cfg.SMOOTH_ASIMOV['channels']}")
     print(f"\noutput directories:")
     print(f"  results: {cfg.RESULTS_DIR}")
     print(f"  histograms: {cfg.HISTS_DIR}")
@@ -262,7 +273,7 @@ if __name__ == "__main__":
         output_path = cfg.HISTS_DIR / f'precision_curves_{cfg.FIT_SCENARIO}_{cfg.FIT_DIMENSION}.png'
         pu.plot_precision_curves(
             all_results_by_config, cfg.EXPOSURE_TIMES, signal_channel,
-            FIT_SCENARIO, FIT_DIMENSION, output_path
+            cfg.FIT_SCENARIO, cfg.FIT_DIMENSION, output_path
         )
     
     print("\n" + "=" * 80)

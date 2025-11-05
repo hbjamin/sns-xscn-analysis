@@ -8,8 +8,22 @@ import config as cfg
 
 hep.style.use("ROOT")
 
-def plot_asimov_projections(asimov_hist, years, output_path):
-    if cfg.FIT_DIMENSION == "1D":
+def plot_asimov_projections(asimov_hist, years, output_path, fit_dimension):
+    """
+    Plot Asimov histogram projections.
+    
+    Parameters
+    ----------
+    asimov_hist : dict
+        Dictionary of histograms by channel
+    years : float
+        Exposure time
+    output_path : Path
+        Where to save the plot
+    fit_dimension : str
+        '1D' or '2D'
+    """
+    if fit_dimension == "1D":
         # For 1D, just plot energy histogram
         fig, ax = plt.subplots(1, 1, figsize=(10, 8))
         en_hists = {ch_name: (hist, cfg.ENERGY_BINS) for ch_name, hist in asimov_hist.items()}
@@ -41,19 +55,37 @@ def plot_asimov_projections(asimov_hist, years, output_path):
         ax[1].legend(loc='upper right', ncol=2, fontsize=20)
     plt.tight_layout()
     plt.savefig(output_path, dpi=150)
-    print(f"Saved Asimov hists: {output_path}")
+    print(f"saved asimov hists: {output_path}")
     plt.close()
 
-def plot_asimov_and_fit_group_projections(asimov_hist, fitgroups_hist, years, output_path, n_toys_to_plot=10):
+def plot_asimov_and_fit_group_projections(asimov_hist, fitgroups_hist, years, output_path, 
+                                         fit_dimension, n_toys_to_plot=10):
     """
-    Plot Asimov and first N toy datasets overlaid (or else it gets too messy
+    Plot Asimov and first N toy datasets overlaid.
+    
+    Parameters
+    ----------
+    asimov_hist : dict
+        Asimov histograms by channel
+    fitgroups_hist : list
+        List of toy histograms
+    years : float
+        Exposure time
+    output_path : Path
+        Where to save the plot
+    fit_dimension : str
+        '1D' or '2D'
+    n_toys_to_plot : int
+        Number of toy datasets to overlay
     """
-    if cfg.FIT_DIMENSION == "1D":
+    if fit_dimension == "1D":
         # 1D case
         fig, ax = plt.subplots(1, 1, figsize=(10, 8))
         # Plot Asimov (solid lines)
         for key in asimov_hist.keys():
-            hep.histplot(asimov_hist[key], bins=cfg.ENERGY_BINS, histtype='step', label=f"Asimov {key}", color=cfg.CHANNEL_COLORS.get(key, 'black'), linewidth=2, ax=ax)
+            hep.histplot(asimov_hist[key], bins=cfg.ENERGY_BINS, histtype='step', 
+                        label=f"Asimov {key}", color=cfg.CHANNEL_COLORS.get(key, 'black'), 
+                        linewidth=2, ax=ax)
         # Plot only first N toys (dashed lines)
         n_to_plot = min(n_toys_to_plot, len(fitgroups_hist))
         for group_idx in range(n_to_plot):
@@ -61,7 +93,9 @@ def plot_asimov_and_fit_group_projections(asimov_hist, fitgroups_hist, years, ou
             for key in fit_hist.keys():
                 # Only add label for first toy
                 label = f"Toy {key}" if group_idx == 0 else None
-                hep.histplot(fit_hist[key], bins=cfg.ENERGY_BINS, histtype='step', linestyle='--', color=cfg.CHANNEL_COLORS.get(key, 'black'), alpha=0.3, label=label, ax=ax)
+                hep.histplot(fit_hist[key], bins=cfg.ENERGY_BINS, histtype='step', 
+                            linestyle='--', color=cfg.CHANNEL_COLORS.get(key, 'black'), 
+                            alpha=0.3, label=label, ax=ax)
         ax.set_xlabel("Reconstructed Energy [MeV]", fontsize=20)
         ax.set_ylabel("Events", fontsize=20)
         ax.semilogy()
@@ -75,8 +109,12 @@ def plot_asimov_and_fit_group_projections(asimov_hist, fitgroups_hist, years, ou
         for key in asimov_hist.keys():
             asimov_energy = np.sum(asimov_hist[key], axis=1)
             asimov_direction = np.sum(asimov_hist[key], axis=0)
-            hep.histplot(asimov_energy, bins=cfg.ENERGY_BINS, histtype='step', label=f"Asimov {key}", color=cfg.CHANNEL_COLORS.get(key, 'black'), linewidth=2, ax=ax[0])
-            hep.histplot(asimov_direction, bins=cfg.DIRECTION_BINS, histtype='step', label=f"Asimov {key}", color=cfg.CHANNEL_COLORS.get(key, 'black'), linewidth=2, ax=ax[1])
+            hep.histplot(asimov_energy, bins=cfg.ENERGY_BINS, histtype='step', 
+                        label=f"Asimov {key}", color=cfg.CHANNEL_COLORS.get(key, 'black'), 
+                        linewidth=2, ax=ax[0])
+            hep.histplot(asimov_direction, bins=cfg.DIRECTION_BINS, histtype='step', 
+                        label=f"Asimov {key}", color=cfg.CHANNEL_COLORS.get(key, 'black'), 
+                        linewidth=2, ax=ax[1])
         # Plot only first N toys (dashed lines)
         n_to_plot = min(n_toys_to_plot, len(fitgroups_hist))
         for group_idx in range(n_to_plot):
@@ -86,8 +124,12 @@ def plot_asimov_and_fit_group_projections(asimov_hist, fitgroups_hist, years, ou
                 fit_direction = np.sum(fit_hist[key], axis=0)
                 # Only add label for first toy
                 label = f"Toy {key}" if group_idx == 0 else None
-                hep.histplot(fit_energy, bins=cfg.ENERGY_BINS, histtype='step', linestyle='--', color=cfg.CHANNEL_COLORS.get(key, 'black'), alpha=0.3, label=label, ax=ax[0])
-                hep.histplot(fit_direction, bins=cfg.DIRECTION_BINS, histtype='step', linestyle='--', color=cfg.CHANNEL_COLORS.get(key, 'black'), alpha=0.3, label=label, ax=ax[1])
+                hep.histplot(fit_energy, bins=cfg.ENERGY_BINS, histtype='step', 
+                            linestyle='--', color=cfg.CHANNEL_COLORS.get(key, 'black'), 
+                            alpha=0.3, label=label, ax=ax[0])
+                hep.histplot(fit_direction, bins=cfg.DIRECTION_BINS, histtype='step', 
+                            linestyle='--', color=cfg.CHANNEL_COLORS.get(key, 'black'), 
+                            alpha=0.3, label=label, ax=ax[1])
         ax[0].set_xlabel("Reconstructed Energy [MeV]", fontsize=20)
         ax[0].set_ylabel("Events", fontsize=20)
         ax[0].semilogy()
@@ -102,7 +144,7 @@ def plot_asimov_and_fit_group_projections(asimov_hist, fitgroups_hist, years, ou
         ax[1].set_title(f"First {n_to_plot} Toys", fontsize=14)
     plt.tight_layout()
     plt.savefig(output_path, dpi=150)
-    print(f"Saved first {n_to_plot} toy hists to: {output_path}")
+    print(f"saved first {n_to_plot} toy hists to: {output_path}")
     plt.close()
 
 def plot_precision_curves(all_results, exposure_times, signal_channel,

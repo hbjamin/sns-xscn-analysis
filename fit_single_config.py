@@ -29,19 +29,28 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
         print(f"  skipped: {e}")
         return None, None
     
-    # Ensure smoothing is applied consistently before splitting
-    print("\nApplying smoothing to the entire dataset before splitting:")
-    for key in energy_direction_data:
-        if key in cfg.SMOOTH_ASIMOV['channels']:
-            print(f"  Smoothing {key}...")
-            energy_direction_data[key] = au.smooth_energy_direction_data(
-                energy_direction_data[key], cfg.SMOOTH_ASIMOV['method'], cfg.SMOOTH_ASIMOV['params']
-            )
+    # Apply smoothing to the entire dataset BEFORE splitting (if enabled)
+    if cfg.SMOOTH_ASIMOV['enabled']:
+        print("\napplying smoothing to entire dataset before splitting:")
+        for key in energy_direction_data:
+            if key in cfg.SMOOTH_ASIMOV['channels']:
+                print(f"  smoothing {key} with {cfg.SMOOTH_ASIMOV['method']}...")
+                energy_direction_data[key] = au.smooth_energy_direction_data(
+                    energy_direction_data[key], 
+                    cfg.SMOOTH_ASIMOV['method'], 
+                    cfg.SMOOTH_ASIMOV['params']
+                )
 
     # filter data to analysis range (now returns neutron_metadata for year scaling)
     filtered_data, filtered_rates, neutron_metadata = au.filter_data_to_analysis_range(
         energy_direction_data, cfg.EVENT_RATES_TOTAL
     )
+    
+    # Calculate neutron rate here (once for all exposure times)
+    if neutron_metadata:
+        neutron_rate = au.calculate_neutron_rate_per_year(neutron_metadata, neutrons_per_mw)
+        filtered_rates['neutrons'] = neutron_rate
+        print(f"\nneutron rate set to: {neutron_rate:.1f}/year")
     
     # split data into asimov and toy pools (no overlap!)
     print(f"\nsplitting data: {cfg.ASIMOV_FRACTION:.0%} for asimov, "
@@ -136,7 +145,7 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
                 if toy_idx == 0:
                     print(f"\nexample fit result:")
                     for ch in channels:
-                        print(f"  {ch}: {m.values[ch]:.1f} Â± {m.errors[ch]:.1f}")
+                        print(f"  {ch}: {m.values[ch]:.1f} ± {m.errors[ch]:.1f}")
             except Exception as e:
                 print(f"  error: fit {toy_idx+1} failed: {e}")
                 continue
@@ -209,15 +218,15 @@ if __name__ == "__main__":
     
     # parse command-line arguments
     if len(sys.argv) != 6:
-        print("usage: python test_single_config.py <detector> <shielding> <neutrons_per_mw> <fit_scenario> <fit_dimension>")
-        print("example: python test_single_config.py water 0ft 100 oxygen 2d")
+        print("usage: python fit_single_config.py <detector> <shielding> <neutrons_per_mw> <fit_scenario> <fit_dimension>")
+        print("example: python fit_single_config.py water 0ft 100 oxygen 2D")
         sys.exit(1)
     
     DETECTOR_NAME = sys.argv[1]   # water/1wbls
     SHIELDING = sys.argv[2]       # 0ft/1ft/3ft
     NEUTRONS_PER_MW = int(sys.argv[3])  # 10/100
     FIT_SCENARIO = sys.argv[4]    # oxygen/gallium
-    FIT_DIMENSION = sys.argv[5]   # 1d/2d
+    FIT_DIMENSION = sys.argv[5]   # 1D/2D
     
     print(f"{'='*80}")
     print("sns cross-section single configuration analysis")
@@ -230,6 +239,10 @@ if __name__ == "__main__":
     print(f"n_toys: {cfg.N_TOYS}")
     print(f"exposure times: {cfg.EXPOSURE_TIMES}")
     print(f"asimov fraction: {cfg.ASIMOV_FRACTION:.0%}")
+    print(f"smoothing enabled: {cfg.SMOOTH_ASIMOV['enabled']}")
+    if cfg.SMOOTH_ASIMOV['enabled']:
+        print(f"  method: {cfg.SMOOTH_ASIMOV['method']}")
+        print(f"  channels: {cfg.SMOOTH_ASIMOV['channels']}")
     print(f"\noutput directories:")
     print(f"  results: {cfg.RESULTS_DIR}")
     print(f"  histograms: {cfg.HISTS_DIR}")

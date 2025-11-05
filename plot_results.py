@@ -255,4 +255,4 @@ if __name__ == "__main__":
     
     print("\n" + "="*80)
     print("plotting complete")
-    print("="*80)
+    print("=" * 80)

@@ -23,7 +23,7 @@ def smooth_pdf_kde(histogram, bin_centers, params):
     bin_centers : array
         Bin center positions
     params : dict
-        Parameters for KDE
+        Parameters for KDE (should contain 'bandwidth' key)
     
     Returns
     -------
@@ -42,8 +42,8 @@ def smooth_pdf_kde(histogram, bin_centers, params):
         smooth_pdf = kde(bin_centers)
         smooth_pdf = np.maximum(smooth_pdf, 0)  # force non-negative
         return smooth_pdf
-    except:
-        print("    warning: kde smoothing failed, using original")
+    except (ValueError, np.linalg.LinAlgError) as e:
+        print(f"    warning: kde smoothing failed ({e}), using original")
         return histogram
 
 def smooth_pdf_spline(histogram, bin_centers, params):
@@ -58,7 +58,7 @@ def smooth_pdf_spline(histogram, bin_centers, params):
     bin_centers : array
         Bin center positions
     params : dict
-        Parameters for spline
+        Parameters for spline (should contain 'smoothness' key)
     
     Returns
     -------
@@ -71,8 +71,8 @@ def smooth_pdf_spline(histogram, bin_centers, params):
         smooth_pdf = spline(bin_centers)
         smooth_pdf = np.maximum(smooth_pdf, 0)  # force non-negative
         return smooth_pdf
-    except:
-        print("    warning: spline smoothing failed, using original")
+    except (ValueError, TypeError) as e:
+        print(f"    warning: spline smoothing failed ({e}), using original")
         return histogram
 
 def smooth_pdf_savgol(histogram, bin_centers, params):
@@ -87,7 +87,7 @@ def smooth_pdf_savgol(histogram, bin_centers, params):
     bin_centers : array
         Bin center positions (not used, but kept for consistency)
     params : dict
-        Parameters for Savitzky-Golay filter
+        Parameters for Savitzky-Golay filter (window, polyorder)
     
     Returns
     -------
@@ -106,11 +106,11 @@ def smooth_pdf_savgol(histogram, bin_centers, params):
         smooth_pdf = savgol_filter(histogram, window, polyorder)
         smooth_pdf = np.maximum(smooth_pdf, 0)  # force non-negative
         return smooth_pdf
-    except:
-        print("    warning: savgol smoothing failed, using original")
+    except (ValueError, TypeError) as e:
+        print(f"    warning: savgol smoothing failed ({e}), using original")
         return histogram
 
-def smooth_pdf_exponential(histogram, bin_centers):
+def smooth_pdf_exponential(histogram, bin_centers, params=None):
     """
     Smooth histogram by fitting exponential decay.
     Good for falling spectra - physics-motivated for backgrounds.
@@ -121,6 +121,8 @@ def smooth_pdf_exponential(histogram, bin_centers):
         Histogram values
     bin_centers : array
         Bin center positions
+    params : dict, optional
+        Not used, but kept for consistency with other methods
     
     Returns
     -------
@@ -143,232 +145,132 @@ def smooth_pdf_exponential(histogram, bin_centers):
         smooth_pdf = exp_func(bin_centers, *popt)
         smooth_pdf = np.maximum(smooth_pdf, 0)  # force non-negative
         return smooth_pdf
-    except:
-        print("    warning: exponential fit failed, using original")
+    except (ValueError, RuntimeError) as e:
+        print(f"    warning: exponential fit failed ({e}), using original")
         return histogram
 
-def smooth_asimov_histograms(asimov_hist, fit_dimension):
+def resample_from_smoothed_histogram(energy, histogram, bin_edges, smoothed_histogram):
     """
-    Apply optional smoothing to asimov histograms.
-    Smoothing happens before normalization and plotting.
+    Resample energy values from a smoothed histogram using inverse transform sampling.
+    
+    This function takes a smoothed histogram and generates new energy values that
+    follow the smoothed distribution. This is the correct way to apply smoothing to
+    event-level data before splitting into asimov/toy pools.
     
     Parameters
     ----------
-    asimov_hist : dict
-        Dictionary of histograms by channel name
-    fit_dimension : str
-        '1D' or '2D' - determines smoothing approach
+    energy : array
+        Original energy values
+    histogram : array
+        Original histogram (not used, kept for reference)
+    bin_edges : array
+        Bin edges used to create histogram
+    smoothed_histogram : array
+        Smoothed histogram values
     
     Returns
     -------
-    smoothed_hist : dict
-        Dictionary of smoothed histograms
+    resampled_energy : array
+        New energy values sampled from smoothed distribution
     """
-    if not cfg.SMOOTH_ASIMOV['enabled']:
-        return asimov_hist
+    # Normalize smoothed histogram to PDF
+    bin_widths = np.diff(bin_edges)
+    pdf = smoothed_histogram / (np.sum(smoothed_histogram * bin_widths))
     
-    print("\nsmoothing asimov histograms:")
-    method = cfg.SMOOTH_ASIMOV['method']
-    params = cfg.SMOOTH_ASIMOV['params'][method]
+    # Create CDF using cumulative sum
+    cdf_values = np.concatenate([[0], np.cumsum(pdf * bin_widths)])
+    cdf_values /= cdf_values[-1]  # Ensure normalized to 1
     
-    smoothed_hist = {}
+    # Create inverse CDF interpolator
+    inverse_cdf = interp1d(cdf_values, bin_edges, 
+                          kind='linear', 
+                          bounds_error=False, 
+                          fill_value=(bin_edges[0], bin_edges[-1]))
     
-    for ch_name, hist in asimov_hist.items():
-        if ch_name not in cfg.SMOOTH_ASIMOV['channels']:
-            # don't smooth this channel
-            smoothed_hist[ch_name] = hist
-            continue
-        
-        print(f"  smoothing {ch_name} with {method}...")
-        
-        if fit_dimension == "1D":
-            # smooth 1d histogram
-            bin_centers = 0.5 * (cfg.ENERGY_BINS[1:] + cfg.ENERGY_BINS[:-1])
-            
-            if method == 'spline':
-                smooth = smooth_pdf_spline(hist, bin_centers, params)
-            elif method == 'kde':
-                smooth = smooth_pdf_kde(hist, bin_centers, params)
-            elif method == 'savgol':
-                smooth = smooth_pdf_savgol(hist, bin_centers, params)
-            elif method == 'exponential':
-                smooth = smooth_pdf_exponential(hist, bin_centers)
-            else:
-                print(f"    unknown method: {method}, skipping")
-                smooth = hist
-            
-            smoothed_hist[ch_name] = smooth
-            
-        else:
-            # smooth 2d histogram - apply to energy projection
-            print(f"    (smoothing energy projection only for 2d)")
-            energy_proj = np.sum(hist, axis=1)
-            bin_centers = 0.5 * (cfg.ENERGY_BINS[1:] + cfg.ENERGY_BINS[:-1])
-            
-            if method == 'spline':
-                smooth_proj = smooth_pdf_spline(energy_proj, bin_centers, params)
-            elif method == 'kde':
-                smooth_proj = smooth_pdf_kde(energy_proj, bin_centers, params)
-            elif method == 'savgol':
-                smooth_proj = smooth_pdf_savgol(energy_proj, bin_centers, params)
-            elif method == 'exponential':
-                smooth_proj = smooth_pdf_exponential(energy_proj, bin_centers)
-            else:
-                smooth_proj = energy_proj
-            
-            # rescale 2d histogram to match smoothed projection
-            original_proj = np.sum(hist, axis=1)
-            scale_factors = np.divide(smooth_proj, original_proj, 
-                                     out=np.ones_like(smooth_proj), 
-                                     where=original_proj!=0)
-            
-            smoothed_2d = hist * scale_factors[:, np.newaxis]
-            smoothed_hist[ch_name] = smoothed_2d
+    # Sample uniform random numbers and transform
+    n_samples = len(energy)
+    uniform_samples = np.random.uniform(0, 1, n_samples)
+    resampled_energy = inverse_cdf(uniform_samples)
     
-    return smoothed_hist
+    return resampled_energy
 
-def smooth_pdf_kde(histogram, bin_centers, bandwidth='scott'):
-    # smooth using kernel density estimation
-    # good for general shapes, automatic bandwidth selection
+def smooth_energy_direction_data(data, method, params):
+    """
+    Smooth the energy distribution for a given channel by resampling from smoothed histogram.
     
-    # create samples by repeating bin centers
-    counts = histogram.astype(int)
-    if np.sum(counts) == 0:
-        return histogram
-    samples = np.repeat(bin_centers, counts)
+    This function creates a histogram of the energy data, smooths it, then resamples
+    the events from the smoothed distribution using inverse transform sampling.
+    Direction is kept unchanged.
     
-    try:
-        kde = gaussian_kde(samples, bw_method=bandwidth)
-        smooth_pdf = kde(bin_centers)
-        smooth_pdf = np.maximum(smooth_pdf, 0)  # force non-negative
-        return smooth_pdf
-    except:
-        print("    warning: kde smoothing failed, using original")
-        return histogram
-
-def smooth_pdf_spline(histogram, bin_centers, smoothness=1e-3):
-    # smooth using spline interpolation
-    # good for smooth curves, tunable smoothness
+    Parameters
+    ----------
+    data : tuple
+        Tuple containing (energy, direction, ntrig, nsim)
+    method : str
+        Smoothing method: 'spline', 'kde', 'savgol', or 'exponential'
+    params : dict
+        Dictionary of parameters for all methods (will extract params for specified method)
     
-    try:
-        spline = UnivariateSpline(bin_centers, histogram, s=smoothness)
-        smooth_pdf = spline(bin_centers)
-        smooth_pdf = np.maximum(smooth_pdf, 0)  # force non-negative
-        return smooth_pdf
-    except:
-        print("    warning: spline smoothing failed, using original")
-        return histogram
-
-def smooth_pdf_savgol(histogram, bin_centers, window=11, polyorder=3):
-    # smooth using savitzky-golay filter
-    # preserves peak positions
+    Returns
+    -------
+    smoothed_data : tuple
+        Tuple containing (smoothed_energy, direction, ntrig, nsim)
+    """
+    energy, direction, ntrig, nsim = data
     
-    if len(histogram) < window:
-        window = len(histogram) if len(histogram) % 2 == 1 else len(histogram) - 1
-        if window < polyorder + 2:
-            print("    warning: not enough bins for savgol filter")
-            return histogram
+    # Get method-specific parameters
+    if method in params:
+        method_params = params[method]
+    else:
+        print(f"    warning: no parameters found for method '{method}', using defaults")
+        method_params = {}
     
-    try:
-        smooth_pdf = savgol_filter(histogram, window, polyorder)
-        smooth_pdf = np.maximum(smooth_pdf, 0)  # force non-negative
-        return smooth_pdf
-    except:
-        print("    warning: savgol smoothing failed, using original")
-        return histogram
-
-def smooth_pdf_exponential(histogram, bin_centers):
-    # fit exponential decay
-    # good for falling spectra (physics-motivated)
+    # Create histogram of energy
+    bin_edges = cfg.ENERGY_BINS
+    bin_centers = 0.5 * (bin_edges[1:] + bin_edges[:-1])
+    hist, _ = np.histogram(energy, bins=bin_edges)
     
-    def exp_func(x, A, k, C):
-        return A * np.exp(-k * x) + C
+    # Apply smoothing
+    if method == 'spline':
+        smoothed_hist = smooth_pdf_spline(hist, bin_centers, method_params)
+    elif method == 'kde':
+        smoothed_hist = smooth_pdf_kde(hist, bin_centers, method_params)
+    elif method == 'savgol':
+        smoothed_hist = smooth_pdf_savgol(hist, bin_centers, method_params)
+    elif method == 'exponential':
+        smoothed_hist = smooth_pdf_exponential(hist, bin_centers, method_params)
+    else:
+        print(f"    warning: unknown smoothing method '{method}', using original")
+        smoothed_hist = hist
     
-    # fit to non-zero bins only
-    mask = histogram > 0
-    if np.sum(mask) < 3:  # need at least 3 points
-        print("    warning: not enough non-zero bins for exponential fit")
-        return histogram
+    # Resample energy from smoothed distribution
+    smoothed_energy = resample_from_smoothed_histogram(energy, hist, bin_edges, smoothed_hist)
     
-    try:
-        popt, _ = curve_fit(exp_func, bin_centers[mask], histogram[mask],
-                           p0=[np.max(histogram), 0.01, 0],
-                           maxfev=5000)
-        smooth_pdf = exp_func(bin_centers, *popt)
-        smooth_pdf = np.maximum(smooth_pdf, 0)  # force non-negative
-        return smooth_pdf
-    except:
-        print("    warning: exponential fit failed, using original")
-        return histogram
-
-def smooth_asimov_histograms(asimov_hist, fit_dimension):
-    # apply optional smoothing to asimov histograms
-    # happens before normalization and plotting
-    
-    if not cfg.SMOOTH_ASIMOV['enabled']:
-        return asimov_hist
-    
-    print("\nsmoothing asimov histograms:")
-    method = cfg.SMOOTH_ASIMOV['method']
-    params = cfg.SMOOTH_ASIMOV['params'][method]
-    
-    smoothed_hist = {}
-    
-    for ch_name, hist in asimov_hist.items():
-        if ch_name not in cfg.SMOOTH_ASIMOV['channels']:
-            # don't smooth this channel
-            smoothed_hist[ch_name] = hist
-            continue
-        
-        print(f"  smoothing {ch_name} with {method}...")
-        
-        if fit_dimension == "1D":
-            # smooth 1d histogram
-            bin_centers = 0.5 * (cfg.ENERGY_BINS[1:] + cfg.ENERGY_BINS[:-1])
-            
-            if method == 'spline':
-                smooth = smooth_pdf_spline(hist, bin_centers, params)
-            elif method == 'kde':
-                smooth = smooth_pdf_kde(hist, bin_centers, params)
-            elif method == 'savgol':
-                smooth = smooth_pdf_savgol(hist, bin_centers, params)
-            elif method == 'exponential':
-                smooth = smooth_pdf_exponential(hist, bin_centers)
-            else:
-                print(f"    unknown method: {method}, skipping")
-                smooth = hist
-            
-            smoothed_hist[ch_name] = smooth
-            
-        else:
-            # smooth 2d histogram - apply to energy projection
-            print(f"    (smoothing energy projection only for 2d)")
-            energy_proj = np.sum(hist, axis=1)
-            bin_centers = 0.5 * (cfg.ENERGY_BINS[1:] + cfg.ENERGY_BINS[:-1])
-            
-            if method == 'spline':
-                smooth_proj = smooth_pdf_spline(energy_proj, bin_centers, params)
-            elif method == 'kde':
-                smooth_proj = smooth_pdf_kde(energy_proj, bin_centers, params)
-            elif method == 'savgol':
-                smooth_proj = smooth_pdf_savgol(energy_proj, bin_centers, params)
-            elif method == 'exponential':
-                smooth_proj = smooth_pdf_exponential(energy_proj, bin_centers)
-            else:
-                smooth_proj = energy_proj
-            
-            # rescale 2d histogram to match smoothed projection
-            original_proj = np.sum(hist, axis=1)
-            scale_factors = np.divide(smooth_proj, original_proj, 
-                                     out=np.ones_like(smooth_proj), 
-                                     where=original_proj!=0)
-            
-            smoothed_2d = hist * scale_factors[:, np.newaxis]
-            smoothed_hist[ch_name] = smoothed_2d
-    
-    return smoothed_hist
+    # Keep direction unchanged
+    return smoothed_energy, direction, ntrig, nsim
 
 def load_preprocessed_channel(detector_name, channel_name):
+    """
+    Load preprocessed channel data from .npz file.
+    
+    Parameters
+    ----------
+    detector_name : str
+        Detector name (e.g., 'water', '1wbls')
+    channel_name : str
+        Channel name (e.g., 'eES', 'cosmics')
+    
+    Returns
+    -------
+    energy : array
+        Reconstructed energy values
+    direction : array
+        Reconstructed direction values
+    ntrig : int
+        Number of triggered events
+    nsim : int
+        Number of simulated events
+    """
     filename = f"{detector_name}_{channel_name}.npz"
     filepath = cfg.PREPROCESSED_DIR / filename
     
@@ -385,9 +287,28 @@ def load_preprocessed_channel(detector_name, channel_name):
     return energy, direction, ntrig, nsim
 
 def load_and_spectrum_weight_neutrons(detector_name, shielding):
-    # load neutron data and apply spectrum weighting only
-    # year scaling happens later when generating toys
+    """
+    Load neutron data and apply spectrum weighting only.
+    Year scaling happens later when generating toys.
     
+    Parameters
+    ----------
+    detector_name : str
+        Detector name
+    shielding : str
+        Shielding configuration (e.g., '0ft', '1ft', '3ft')
+    
+    Returns
+    -------
+    energy_weighted : array
+        Spectrum-weighted energy values
+    direction_weighted : array
+        Corresponding direction values
+    ntrig : int
+        Number of triggered events
+    nsim : int
+        Number of simulated neutrons
+    """
     filename = f"{detector_name}_neutrons_{shielding}.npz"
     filepath = cfg.PREPROCESSED_DIR / filename
     
@@ -440,10 +361,23 @@ def load_and_spectrum_weight_neutrons(detector_name, shielding):
     return energy_weighted, direction_weighted, ntrig, nsim
 
 def split_data_for_asimov_and_toys(energy_direction_data, asimov_fraction):
-    # split data into non-overlapping sets for asimov pdf and toy sampling
-    # asimov_fraction controls split (e.g. 0.5 = 50% asimov, 50% toys)
-    # works with filtered data format: (energy, direction)
+    """
+    Split data into non-overlapping sets for asimov pdf and toy sampling.
     
+    Parameters
+    ----------
+    energy_direction_data : dict
+        Dictionary with keys as channel names and values as (energy, direction) tuples
+    asimov_fraction : float
+        Fraction of data to use for asimov (e.g., 0.5 = 50%)
+    
+    Returns
+    -------
+    asimov_data : dict
+        Data for asimov histograms
+    toy_data : dict
+        Data for toy sampling
+    """
     asimov_data = {}
     toy_data = {}
     
@@ -464,12 +398,35 @@ def split_data_for_asimov_and_toys(energy_direction_data, asimov_fraction):
         asimov_data[key] = (energy[asimov_idx], direction[asimov_idx])
         toy_data[key] = (energy[toy_idx], direction[toy_idx])
         
-        print(f"  {key}: {n_total:,} â†’ {len(asimov_idx):,} asimov + {len(toy_idx):,} toy")
+        print(f"  {key}: {n_total:,} → {len(asimov_idx):,} asimov + {len(toy_idx):,} toy")
     
     return asimov_data, toy_data
 
 def filter_data_to_analysis_range(energy_direction_data, event_rates_total, 
                                   energy_min=None, energy_max=None):
+    """
+    Filter event data to specified energy range and calculate filtered rates.
+    
+    Parameters
+    ----------
+    energy_direction_data : dict
+        Dictionary with channel data (energy, direction, ntrig, nsim)
+    event_rates_total : dict
+        Dictionary of total event rates per year (before filtering)
+    energy_min : float, optional
+        Minimum energy (defaults to cfg.ENERGY_MIN)
+    energy_max : float, optional
+        Maximum energy (defaults to cfg.ENERGY_MAX)
+    
+    Returns
+    -------
+    filtered_data : dict
+        Filtered data as (energy, direction) tuples
+    filtered_rates : dict
+        Event rates after filtering
+    neutron_metadata : dict
+        Metadata for neutron rate calculation
+    """
     if energy_min is None:
         energy_min = cfg.ENERGY_MIN
     if energy_max is None:
@@ -497,8 +454,8 @@ def filter_data_to_analysis_range(energy_direction_data, event_rates_total,
         if key in event_rates_total and event_rates_total[key] > 0:
             filtered_rate = event_rates_total[key] * fraction
         else:
-            # for neutrons, store count and nsim for later scaling
-            filtered_rate = filtered_events  # placeholder
+            # for neutrons, store metadata for later scaling
+            filtered_rate = 0  # will be calculated later
             if key == 'neutrons':
                 neutron_metadata = {
                     'nsim': nsim,
@@ -509,80 +466,105 @@ def filter_data_to_analysis_range(energy_direction_data, event_rates_total,
         filtered_data[key] = (energy_filtered, direction_filtered)
         filtered_rates[key] = filtered_rate
         
-        print(f"  {key}: {total_events:,} â†’ {filtered_events:,} events "
+        print(f"  {key}: {total_events:,} → {filtered_events:,} events "
               f"({100*fraction:.1f}%), rate = {filtered_rate:.1f}/year")
     
     return filtered_data, filtered_rates, neutron_metadata
 
-def calculate_neutron_rate_for_pool(pool_size, neutron_metadata, neutrons_per_mw):
-    # calculate expected neutron events per year based on pool size
-    # pool_size: number of events in the toy pool after splitting
-    # neutron_metadata: contains nsim and filtered_count from original data
+def calculate_neutron_rate_per_year(neutron_metadata, neutrons_per_mw):
+    """
+    Calculate expected neutron event rate per year based on simulation parameters.
     
-    if neutron_metadata:
-        nsim = neutron_metadata['nsim']
-        filtered_count = neutron_metadata['filtered_count']
-
-        print("nsim: ", nsim)
-        print("filtered count: ", filtered_count)
-        
-        # expected neutrons per year (total)
-        expected_total = neutrons_per_mw * cfg.SNS_HOURS_PER_YEAR * cfg.SNS_BEAM_MW
-        
-        # simulation represents nsim neutrons over NEUTRON_SIM_AREA_M2
-        sim_neutrons_per_m2 = nsim / cfg.NEUTRON_SIM_AREA_M2
-        
-        # scale factor from simulation to one year
-        scale_factor = expected_total / sim_neutrons_per_m2
-        
-        # rate for this pool (accounting for fraction of filtered events in pool)
-        pool_fraction = pool_size / filtered_count if filtered_count > 0 else 1.0
-        rate_per_year = scale_factor * pool_fraction
-        
-        return rate_per_year
-    else:
-        # fallback: use pool_size as rate
-        print("falling back for neutron rate")
-        return pool_size
+    Parameters
+    ----------
+    neutron_metadata : dict
+        Contains 'nsim' and 'filtered_count' from filtered neutron data
+    neutrons_per_mw : float
+        Expected neutrons per MW per hour per m^2
+    
+    Returns
+    -------
+    rate_per_year : float
+        Expected neutron events per year (for filtered energy range)
+    """
+    if not neutron_metadata:
+        print("    warning: no neutron metadata available")
+        return 0
+    
+    nsim = neutron_metadata['nsim']
+    filtered_count = neutron_metadata['filtered_count']
+    
+    # Expected neutrons per year (total) hitting the detector area
+    expected_total_per_year = neutrons_per_mw * cfg.SNS_HOURS_PER_YEAR * cfg.SNS_BEAM_MW
+    
+    # Simulation represents nsim neutrons over NEUTRON_SIM_AREA_M2
+    # Scale to one year of running
+    scale_factor = expected_total_per_year / nsim
+    
+    # Apply to filtered events
+    rate_per_year = filtered_count * scale_factor
+    
+    return rate_per_year
 
 def make_toy_datasets_with_poisson_and_flux(toy_data_pool, filtered_rates, years, 
                                            ngroups, neutron_metadata=None, 
                                            neutrons_per_mw=None, flux_err=None):
-    # sample from toy_data_pool (which is separate from asimov data)
-    # for neutrons, calculate expected rate based on pool size
+    """
+    Generate toy datasets by sampling from toy pool with Poisson fluctuations.
     
+    Parameters
+    ----------
+    toy_data_pool : dict
+        Dictionary of (energy, direction) arrays for each channel
+    filtered_rates : dict
+        Expected event rates per year
+    years : float
+        Exposure time in years
+    ngroups : int
+        Number of toy datasets to generate
+    neutron_metadata : dict, optional
+        Metadata for neutron rate calculation
+    neutrons_per_mw : float, optional
+        Neutrons per MW for neutron rate calculation
+    flux_err : dict, optional
+        Flux uncertainties by channel (defaults to cfg.FLUX_ERR)
+    
+    Returns
+    -------
+    toy_datasets : dict
+        Dictionary with lists of [energy, direction] arrays for each channel
+    """
     if flux_err is None:
         flux_err = cfg.FLUX_ERR
     
     toy_datasets = {key: [] for key in toy_data_pool.keys()}
     
+    # Calculate neutron rate once (doesn't depend on toy pool size)
+    neutron_rate = 0
+    if 'neutrons' in toy_data_pool and neutron_metadata and neutrons_per_mw is not None:
+        neutron_rate = calculate_neutron_rate_per_year(neutron_metadata, neutrons_per_mw)
+    
     for key in toy_data_pool.keys():
         energies, directions = toy_data_pool[key]
-
-        # calculate expected rate for this channel
-        if key == 'neutrons' and neutron_metadata and neutrons_per_mw is not None:
-            base_rate = calculate_neutron_rate_for_pool(
-                len(energies), neutron_metadata, neutrons_per_mw
-            )
+        
+        # Determine base rate for this channel
+        if key == 'neutrons':
+            base_rate = neutron_rate
         else:
             base_rate = filtered_rates[key]
         
         for i in range(ngroups):
-            # apply flux uncertainty for neutrino channels
+            # Apply flux uncertainty for neutrino channels
             if key in flux_err:
                 flux_variation = np.random.normal(1.0, flux_err[key])
                 expected_rate = base_rate * flux_variation
             else:
                 expected_rate = base_rate
             
-            # apply poisson fluctuation
+            # Apply Poisson fluctuation
             n_events = np.random.poisson(expected_rate * years)
             
-            # ensure neutron toy datasets are populated correctly
-            if key == 'neutrons' and n_events == 0:
-                n_events = 1  # ensure at least one neutron event
-            
-            # sample with replacement from toy pool
+            # Sample with replacement from toy pool
             if len(energies) > 0 and n_events > 0:
                 idx = np.random.choice(len(energies), size=n_events, replace=True)
                 sampled_energies = energies[idx]
@@ -596,6 +578,25 @@ def make_toy_datasets_with_poisson_and_flux(toy_data_pool, filtered_rates, years
     return toy_datasets
 
 def normalize_and_scale_asimov(asimov_hist, years, filtered_rates):
+    """
+    Normalize asimov histograms to PDFs and scale by expected rates.
+    
+    Parameters
+    ----------
+    asimov_hist : dict
+        Raw histograms from asimov pool
+    years : float
+        Exposure time
+    filtered_rates : dict
+        Expected rates per year
+    
+    Returns
+    -------
+    asimov_normalized : dict
+        Normalized PDFs
+    asimov_scaled : dict
+        Scaled to expected event counts
+    """
     asimov_normalized = {}
     asimov_scaled = {}
     
@@ -614,6 +615,29 @@ def normalize_and_scale_asimov(asimov_hist, years, filtered_rates):
 
 def make_normalized_interpolated_pdf(asimov_normalized, fit_dimension, 
                                     energy_bins=None, direction_bins=None):
+    """
+    Create interpolated PDF functions from normalized asimov histograms.
+    
+    Parameters
+    ----------
+    asimov_normalized : dict
+        Normalized histograms
+    fit_dimension : str
+        '1D' or '2D'
+    energy_bins : array, optional
+        Energy bin edges
+    direction_bins : array, optional
+        Direction bin edges
+    
+    Returns
+    -------
+    norm_pdf_luts : dict
+        Interpolated PDF functions
+    pdfs : dict
+        Bin-normalized PDFs
+    bin_centers : array or list
+        Bin centers (1D array or list of [energy_centers, direction_centers])
+    """
     if energy_bins is None:
         energy_bins = cfg.ENERGY_BINS
     if direction_bins is None:
@@ -678,6 +702,35 @@ def make_normalized_interpolated_pdf(asimov_normalized, fit_dimension,
 def fit_with_extended_binned_nll(fit_data, channels_to_fit, norm_pdf_luts, 
                                 years, total_events, fit_scenario, fit_dimension,
                                 binning, filtered_rates):
+    """
+    Perform extended binned negative log-likelihood fit.
+    
+    Parameters
+    ----------
+    fit_data : array
+        Binned data to fit
+    channels_to_fit : list
+        List of channel names to include in fit
+    norm_pdf_luts : dict
+        Interpolated PDF functions
+    years : float
+        Exposure time
+    total_events : float
+        Total expected events
+    fit_scenario : str
+        'oxygen' or 'gallium'
+    fit_dimension : str
+        '1D' or '2D'
+    binning : array or list
+        Bin edges
+    filtered_rates : dict
+        Expected rates per year
+    
+    Returns
+    -------
+    m : Minuit
+        Fitted Minuit object
+    """
     
     # define pdf functions based on dimension and scenario
     if fit_dimension == "1D":
@@ -789,43 +842,7 @@ def fit_with_extended_binned_nll(fit_data, channels_to_fit, norm_pdf_luts,
     # try minos error analysis
     try:
         m.minos()
-    except:
+    except (RuntimeError, ValueError):
         pass  # fall back to hesse errors
     
     return m
-
-def smooth_energy_direction_data(data, method, params):
-    """
-    Smooth the energy and direction data for a given channel.
-
-    Parameters:
-    - data: Tuple containing energy, direction, ntrig, and nsim.
-    - method: Smoothing method (e.g., 'spline', 'kde').
-    - params: Parameters for the smoothing method.
-
-    Returns:
-    - Smoothed data tuple (energy, direction, ntrig, nsim).
-    """
-    energy, direction, ntrig, nsim = data
-
-    # Smooth energy
-    bin_centers = 0.5 * (cfg.ENERGY_BINS[1:] + cfg.ENERGY_BINS[:-1])
-    hist, _ = np.histogram(energy, bins=cfg.ENERGY_BINS)
-
-    if method == 'spline':
-        smoothed_hist = smooth_pdf_spline(hist, bin_centers, params)
-    elif method == 'kde':
-        smoothed_hist = smooth_pdf_kde(hist, bin_centers, params)
-    elif method == 'savgol':
-        smoothed_hist = smooth_pdf_savgol(hist, bin_centers, params)
-    elif method == 'exponential':
-        smoothed_hist = smooth_pdf_exponential(hist, bin_centers)
-    else:
-        smoothed_hist = hist
-
-    # Resample energy based on smoothed histogram
-    probabilities = smoothed_hist / np.sum(smoothed_hist)
-    sampled_indices = np.random.choice(len(bin_centers), size=len(energy), p=probabilities, replace=True)
-    smoothed_energy = bin_centers[sampled_indices]
-
-    return smoothed_energy, direction, ntrig, nsim

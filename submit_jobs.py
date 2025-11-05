@@ -76,7 +76,7 @@ echo "  fit dimension: ${fit_dimension}"
 echo ""
 
 # run the analysis
-python test_single_config.py ${detector} ${shielding} ${neutrons_per_mw} ${fit_scenario} ${fit_dimension}
+python fit_single_config.py ${detector} ${shielding} ${neutrons_per_mw} ${fit_scenario} ${fit_dimension}
 
 INNEREOF
             

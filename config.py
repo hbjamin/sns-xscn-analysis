@@ -84,10 +84,10 @@ EXPOSURE_TIMES = [0.5, 1.0, 2.0, 3.0]
 # 0.5 = 50% for asimov, 50% for toy sampling (no overlap!)
 ASIMOV_FRACTION = 0.5
 
-# smoothing configuration for asimov histograms
-# happens before normalization and plotting
+# smoothing configuration for event-level data
+# happens BEFORE splitting into asimov/toy pools
 SMOOTH_ASIMOV = {
-    'enabled': False,  # toggle on/off
+    'enabled': True,  # toggle on/off
     'channels': ['cosmics', 'neutrons'],  # which channels to smooth
     'method': 'spline',  # 'kde', 'spline', 'savgol', 'exponential'
     'params': {
