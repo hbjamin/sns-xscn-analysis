@@ -29,9 +29,10 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
         print(f"  skipped: {e}")
         return None, None
     
-    # Apply smoothing to the entire dataset BEFORE splitting (if enabled)
+    # Apply smoothing to the entire dataset BEFORE filtering (if enabled)
+    # Smoothing on full unfiltered data provides better statistics for density estimation
     if cfg.SMOOTH_ASIMOV['enabled']:
-        print("\napplying smoothing to entire dataset before splitting:")
+        print("\napplying smoothing to entire dataset before filtering:")
         for key in energy_direction_data:
             if key in cfg.SMOOTH_ASIMOV['channels']:
                 print(f"  smoothing {key} with {cfg.SMOOTH_ASIMOV['method']}...")
@@ -41,7 +42,7 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
                     cfg.SMOOTH_ASIMOV['params']
                 )
 
-    # filter data to analysis range (now returns neutron_metadata for year scaling)
+    # filter data to analysis range (now with smoothed data if enabled)
     filtered_data, filtered_rates, neutron_metadata = au.filter_data_to_analysis_range(
         energy_direction_data, cfg.EVENT_RATES_TOTAL
     )
@@ -145,7 +146,7 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
                 if toy_idx == 0:
                     print(f"\nexample fit result:")
                     for ch in channels:
-                        print(f"  {ch}: {m.values[ch]:.1f} ± {m.errors[ch]:.1f}")
+                        print(f"  {ch}: {m.values[ch]:.1f} Â± {m.errors[ch]:.1f}")
             except Exception as e:
                 print(f"  error: fit {toy_idx+1} failed: {e}")
                 continue

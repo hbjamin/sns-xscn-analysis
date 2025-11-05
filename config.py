@@ -27,12 +27,12 @@ ALPHA_WATER = 0.04138615778199661
 ALPHA_1WBLS = 0.010945997573964417
 
 # analysis energy range
-ENERGY_MIN = 0.0
+ENERGY_MIN = 1.0
 ENERGY_MAX = 75.0
 
 # binning
-#ENERGY_BINS = np.arange(ENERGY_MIN, ENERGY_MAX + 1.25, 1.25)
-ENERGY_BINS = np.arange(ENERGY_MIN, ENERGY_MAX + 5, 5)
+ENERGY_BINS = np.arange(ENERGY_MIN, ENERGY_MAX + 1.25, 1.25)
+#ENERGY_BINS = np.arange(ENERGY_MIN, ENERGY_MAX + 5, 5)
 DIRECTION_BINS = np.linspace(-1, 1, 16)
 
 FIT_SCENARIO = "oxygen" # oxygen/gallium
@@ -86,7 +86,8 @@ EXPOSURE_TIMES = [0.5, 1.0, 2.0, 3.0]
 ASIMOV_FRACTION = 0.5
 
 # smoothing configuration for event-level data
-# happens BEFORE splitting into asimov/toy pools
+# Applied to FULL UNFILTERED data BEFORE filtering to analysis range
+# This workflow provides better statistics for smoothing algorithms
 SMOOTH_ASIMOV = {
     'enabled': True,  # toggle on/off
     'channels': ['neutrons', 'cosmics'],  # which channels to smooth

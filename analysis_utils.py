@@ -198,9 +198,15 @@ def smooth_energy_direction_data(data, method, params):
     """
     Smooth the energy distribution for a given channel by resampling from smoothed histogram.
     
-    This function creates a histogram of the energy data, smooths it, then resamples
-    the events from the smoothed distribution using inverse transform sampling.
-    Direction is kept unchanged.
+    IMPORTANT: This function should be applied to the FULL UNFILTERED dataset before 
+    applying any energy cuts. Smoothing with more data points provides better statistical
+    estimates of the underlying distribution.
+    
+    Workflow:
+    1. Create histogram of energy data
+    2. Apply smoothing method to histogram
+    3. Resample events from smoothed distribution using inverse transform sampling
+    4. Preserve direction and metadata (ntrig, nsim) unchanged
     
     Parameters
     ----------
@@ -215,8 +221,10 @@ def smooth_energy_direction_data(data, method, params):
     -------
     smoothed_data : tuple
         Tuple containing (smoothed_energy, direction, ntrig, nsim)
+        Note: Number of events is preserved, only energy values are resampled
     """
     energy, direction, ntrig, nsim = data
+    original_count = len(energy)
     
     # Get method-specific parameters
     if method in params:
@@ -245,6 +253,11 @@ def smooth_energy_direction_data(data, method, params):
     
     # Resample energy from smoothed distribution
     smoothed_energy = resample_from_smoothed_histogram(energy, hist, bin_edges, smoothed_hist)
+    
+    # Validate that event count is preserved
+    smoothed_count = len(smoothed_energy)
+    if smoothed_count != original_count:
+        print(f"    warning: event count changed during smoothing: {original_count} → {smoothed_count}")
     
     # Keep direction unchanged
     return smoothed_energy, direction, ntrig, nsim
@@ -398,7 +411,7 @@ def split_data_for_asimov_and_toys(energy_direction_data, asimov_fraction):
         asimov_data[key] = (energy[asimov_idx], direction[asimov_idx])
         toy_data[key] = (energy[toy_idx], direction[toy_idx])
         
-        print(f"  {key}: {n_total:,} → {len(asimov_idx):,} asimov + {len(toy_idx):,} toy")
+        print(f"  {key}: {n_total:,} â†’ {len(asimov_idx):,} asimov + {len(toy_idx):,} toy")
     
     return asimov_data, toy_data
 
@@ -466,7 +479,7 @@ def filter_data_to_analysis_range(energy_direction_data, event_rates_total,
         filtered_data[key] = (energy_filtered, direction_filtered)
         filtered_rates[key] = filtered_rate
         
-        print(f"  {key}: {total_events:,} → {filtered_events:,} events "
+        print(f"  {key}: {total_events:,} â†’ {filtered_events:,} events "
               f"({100*fraction:.1f}%), rate = {filtered_rate:.1f}/year")
     
     return filtered_data, filtered_rates, neutron_metadata
