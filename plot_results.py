@@ -12,7 +12,7 @@ hep.style.use("ROOT")
 
 # filter settings (set to none to process all)
 FILTER_FIT_SCENARIO = "oxygen"  # oxygen/gallium/none
-FILTER_FIT_DIMENSION = "2D"     # 1d/2d/none
+FILTER_FIT_DIMENSION = "1D"     # 1d/2d/none
 
 def load_all_results(results_dir, filter_scenario=None, filter_dimension=None):
     result_files = sorted(results_dir.glob("results_*.pkl"))
@@ -251,6 +251,10 @@ if __name__ == "__main__":
     if has_water and has_wbls:
         output_path = cfg.HISTS_DIR / f"precision_curves_{scenario_str}_{dimension_str}_combined.png"
         plot_precision_curves(all_results, output_path, detector_filter=None)
+        print("\nℹ note: created separate plots for water and wbls, plus combined plot")
+
+        output_path = cfg.HISTS_DIR / f"bias_curves_{scenario_str}_{dimension_str}_combined.png"
+        plot_bias_curves(all_results, output_path, detector_filter=None)
         print("\nℹ note: created separate plots for water and wbls, plus combined plot")
     
     print("\n" + "="*80)

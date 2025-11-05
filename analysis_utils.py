@@ -149,13 +149,61 @@ def smooth_pdf_exponential(histogram, bin_centers, params=None):
         print(f"    warning: exponential fit failed ({e}), using original")
         return histogram
 
+def smooth_asimov_histogram(histogram, method, params, bin_centers):
+    """
+    Smooth an asimov histogram using the specified method.
+    
+    This function applies smoothing directly to histogram bin contents,
+    NOT at the event level. This is the statistically correct approach:
+    the asimov histogram is already created from a limited number of events,
+    and smoothing just interpolates between bins without introducing
+    artificial correlations.
+    
+    Parameters
+    ----------
+    histogram : array
+        Raw histogram from asimov pool
+    method : str
+        Smoothing method: 'spline', 'kde', 'savgol', or 'exponential'
+    params : dict
+        Dictionary of parameters for all methods
+    bin_centers : array
+        Bin center positions (for 1D histograms)
+    
+    Returns
+    -------
+    smoothed_histogram : array
+        Smoothed histogram
+    """
+    # Get method-specific parameters
+    if method in params:
+        method_params = params[method]
+    else:
+        print(f"    warning: no parameters found for method '{method}', using defaults")
+        method_params = {}
+    
+    # Apply smoothing based on method
+    if method == 'spline':
+        smoothed = smooth_pdf_spline(histogram, bin_centers, method_params)
+    elif method == 'kde':
+        smoothed = smooth_pdf_kde(histogram, bin_centers, method_params)
+    elif method == 'savgol':
+        smoothed = smooth_pdf_savgol(histogram, bin_centers, method_params)
+    elif method == 'exponential':
+        smoothed = smooth_pdf_exponential(histogram, bin_centers, method_params)
+    else:
+        print(f"    warning: unknown smoothing method '{method}', using original")
+        smoothed = histogram
+    
+    return smoothed
+
 def resample_from_smoothed_histogram(energy, histogram, bin_edges, smoothed_histogram):
     """
     Resample energy values from a smoothed histogram using inverse transform sampling.
     
-    This function takes a smoothed histogram and generates new energy values that
-    follow the smoothed distribution. This is the correct way to apply smoothing to
-    event-level data before splitting into asimov/toy pools.
+    NOTE: This function is DEPRECATED for the current analysis workflow.
+    We now smooth histograms directly instead of resampling events.
+    This function is kept for potential future use or legacy compatibility.
     
     Parameters
     ----------
@@ -196,17 +244,16 @@ def resample_from_smoothed_histogram(energy, histogram, bin_edges, smoothed_hist
 
 def smooth_energy_direction_data(data, method, params):
     """
-    Smooth the energy distribution for a given channel by resampling from smoothed histogram.
+    DEPRECATED: This function smooths at event level and is no longer used.
     
-    IMPORTANT: This function should be applied to the FULL UNFILTERED dataset before 
-    applying any energy cuts. Smoothing with more data points provides better statistical
-    estimates of the underlying distribution.
+    We now smooth histograms directly (after splitting into asimov/toy pools)
+    rather than resampling events from smoothed distributions.
+    This function is kept for legacy compatibility only.
     
-    Workflow:
-    1. Create histogram of energy data
-    2. Apply smoothing method to histogram
-    3. Resample events from smoothed distribution using inverse transform sampling
-    4. Preserve direction and metadata (ntrig, nsim) unchanged
+    The correct workflow is:
+    1. Split raw events into asimov and toy pools
+    2. Create histograms from raw events
+    3. Smooth only the asimov histogram (not events, not toys)
     
     Parameters
     ----------
@@ -221,10 +268,12 @@ def smooth_energy_direction_data(data, method, params):
     -------
     smoothed_data : tuple
         Tuple containing (smoothed_energy, direction, ntrig, nsim)
-        Note: Number of events is preserved, only energy values are resampled
     """
+    print("    WARNING: smooth_energy_direction_data is deprecated!")
+    print("    This function smooths at event level which is statistically incorrect.")
+    print("    Use smooth_asimov_histogram instead to smooth histograms after splitting.")
+    
     energy, direction, ntrig, nsim = data
-    original_count = len(energy)
     
     # Get method-specific parameters
     if method in params:
@@ -253,11 +302,6 @@ def smooth_energy_direction_data(data, method, params):
     
     # Resample energy from smoothed distribution
     smoothed_energy = resample_from_smoothed_histogram(energy, hist, bin_edges, smoothed_hist)
-    
-    # Validate that event count is preserved
-    smoothed_count = len(smoothed_energy)
-    if smoothed_count != original_count:
-        print(f"    warning: event count changed during smoothing: {original_count} → {smoothed_count}")
     
     # Keep direction unchanged
     return smoothed_energy, direction, ntrig, nsim
@@ -411,7 +455,7 @@ def split_data_for_asimov_and_toys(energy_direction_data, asimov_fraction):
         asimov_data[key] = (energy[asimov_idx], direction[asimov_idx])
         toy_data[key] = (energy[toy_idx], direction[toy_idx])
         
-        print(f"  {key}: {n_total:,} â†’ {len(asimov_idx):,} asimov + {len(toy_idx):,} toy")
+        print(f"  {key}: {n_total:,} → {len(asimov_idx):,} asimov + {len(toy_idx):,} toy")
     
     return asimov_data, toy_data
 
@@ -479,7 +523,7 @@ def filter_data_to_analysis_range(energy_direction_data, event_rates_total,
         filtered_data[key] = (energy_filtered, direction_filtered)
         filtered_rates[key] = filtered_rate
         
-        print(f"  {key}: {total_events:,} â†’ {filtered_events:,} events "
+        print(f"  {key}: {total_events:,} → {filtered_events:,} events "
               f"({100*fraction:.1f}%), rate = {filtered_rate:.1f}/year")
     
     return filtered_data, filtered_rates, neutron_metadata

@@ -27,7 +27,7 @@ ALPHA_WATER = 0.04138615778199661
 ALPHA_1WBLS = 0.010945997573964417
 
 # analysis energy range
-ENERGY_MIN = 1.0
+ENERGY_MIN = 0.0
 ENERGY_MAX = 75.0
 
 # binning
@@ -36,7 +36,7 @@ ENERGY_BINS = np.arange(ENERGY_MIN, ENERGY_MAX + 1.25, 1.25)
 DIRECTION_BINS = np.linspace(-1, 1, 16)
 
 FIT_SCENARIO = "oxygen" # oxygen/gallium
-FIT_DIMENSION = "2D" # 1D/2D
+FIT_DIMENSION = "1D" # 1D/2D
 
 # flux uncertainties (only applied to neutrino channels)
 FLUX_ERR = {
@@ -85,13 +85,16 @@ EXPOSURE_TIMES = [0.5, 1.0, 2.0, 3.0]
 # 0.5 = 50% for asimov, 50% for toy sampling (no overlap!)
 ASIMOV_FRACTION = 0.5
 
-# smoothing configuration for event-level data
-# Applied to FULL UNFILTERED data BEFORE filtering to analysis range
-# This workflow provides better statistics for smoothing algorithms
+# smoothing configuration for ASIMOV HISTOGRAMS ONLY (applied AFTER splitting)
+# This is the statistically correct approach:
+# - Split data first into asimov and toy pools
+# - Create histograms from raw events in both pools
+# - Smooth ONLY the asimov histogram (not the toy pool!)
+# - Toy datasets should retain natural statistical fluctuations
 SMOOTH_ASIMOV = {
     'enabled': True,  # toggle on/off
-    'channels': ['neutrons', 'cosmics'],  # which channels to smooth
-    'method': 'kde',  # 'kde', 'spline', 'savgol', 'exponential'
+    'channels': ['neutrons', 'cosmics'],  # which ASIMOV histograms to smooth
+    'method': 'spline',  # 'kde', 'spline', 'savgol', 'exponential'
     'params': {
         'spline': {'smoothness': 1},
         'kde': {'bandwidth': 'scott'},
@@ -115,7 +118,10 @@ CHANNEL_COLORS = {
     'nueO16': plt.cm.tab10.colors[1],
     'nueGa71': plt.cm.tab10.colors[2],
     'cosmics': plt.cm.tab10.colors[3],
-    'neutrons': plt.cm.tab10.colors[4]
+    'neutrons': plt.cm.tab10.colors[4],
+    'extra0': plt.cm.tab10.colors[5],
+    'extra1': plt.cm.tab10.colors[6],
+    'extra2': plt.cm.tab10.colors[7]
 }
 
 # signal channel labels

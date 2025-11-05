@@ -28,21 +28,8 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
     except FileNotFoundError as e:
         print(f"  skipped: {e}")
         return None, None
-    
-    # Apply smoothing to the entire dataset BEFORE filtering (if enabled)
-    # Smoothing on full unfiltered data provides better statistics for density estimation
-    if cfg.SMOOTH_ASIMOV['enabled']:
-        print("\napplying smoothing to entire dataset before filtering:")
-        for key in energy_direction_data:
-            if key in cfg.SMOOTH_ASIMOV['channels']:
-                print(f"  smoothing {key} with {cfg.SMOOTH_ASIMOV['method']}...")
-                energy_direction_data[key] = au.smooth_energy_direction_data(
-                    energy_direction_data[key], 
-                    cfg.SMOOTH_ASIMOV['method'], 
-                    cfg.SMOOTH_ASIMOV['params']
-                )
 
-    # filter data to analysis range (now with smoothed data if enabled)
+    # filter data to analysis range (now returns neutron_metadata for year scaling)
     filtered_data, filtered_rates, neutron_metadata = au.filter_data_to_analysis_range(
         energy_direction_data, cfg.EVENT_RATES_TOTAL
     )
@@ -53,7 +40,8 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
         filtered_rates['neutrons'] = neutron_rate
         print(f"\nneutron rate set to: {neutron_rate:.1f}/year")
     
-    # split data into asimov and toy pools (no overlap!)
+    # CRITICAL: split data into asimov and toy pools FIRST (no overlap!)
+    # This is done on RAW events, before any smoothing
     print(f"\nsplitting data: {cfg.ASIMOV_FRACTION:.0%} for asimov, "
           f"{1-cfg.ASIMOV_FRACTION:.0%} for toys")
     asimov_data, toy_data = au.split_data_for_asimov_and_toys(
@@ -73,6 +61,35 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
     
     for key in asimov_hist:
         print(f"  {key}: {np.sum(asimov_hist[key]):.0f} events in asimov histogram")
+    
+    # NEW: Apply smoothing to asimov histograms AFTER histogram creation
+    # This is the statistically correct approach - we smooth the histogram itself,
+    # not the underlying events. The toy pool remains completely unsmoothed.
+    if cfg.SMOOTH_ASIMOV['enabled'] and fit_dimension == "1D":
+        print(f"\nsmoothing asimov histograms (method: {cfg.SMOOTH_ASIMOV['method']}):")
+        bin_centers = 0.5 * (cfg.ENERGY_BINS[1:] + cfg.ENERGY_BINS[:-1])
+        
+        for key in asimov_hist:
+            if key in cfg.SMOOTH_ASIMOV['channels']:
+                original_sum = np.sum(asimov_hist[key])
+                
+                # Smooth the histogram directly
+                asimov_hist[key] = au.smooth_asimov_histogram(
+                    asimov_hist[key],
+                    cfg.SMOOTH_ASIMOV['method'],
+                    cfg.SMOOTH_ASIMOV['params'],
+                    bin_centers
+                )
+                
+                # Renormalize to preserve total event count
+                smoothed_sum = np.sum(asimov_hist[key])
+                if smoothed_sum > 0:
+                    asimov_hist[key] = asimov_hist[key] * (original_sum / smoothed_sum)
+                
+                print(f"  {key}: smoothed (preserved {original_sum:.0f} events)")
+    elif cfg.SMOOTH_ASIMOV['enabled'] and fit_dimension == "2D":
+        print(f"\nwarning: smoothing not yet implemented for 2D histograms")
+        print(f"  (asimov histograms will remain unsmoothed)")
     
     # determine channels to fit
     channels, signal_channel = cfg.get_channels_for_scenario(fit_scenario)
@@ -146,7 +163,7 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
                 if toy_idx == 0:
                     print(f"\nexample fit result:")
                     for ch in channels:
-                        print(f"  {ch}: {m.values[ch]:.1f} Â± {m.errors[ch]:.1f}")
+                        print(f"  {ch}: {m.values[ch]:.1f} ± {m.errors[ch]:.1f}")
             except Exception as e:
                 print(f"  error: fit {toy_idx+1} failed: {e}")
                 continue
@@ -244,6 +261,7 @@ if __name__ == "__main__":
     if cfg.SMOOTH_ASIMOV['enabled']:
         print(f"  method: {cfg.SMOOTH_ASIMOV['method']}")
         print(f"  channels: {cfg.SMOOTH_ASIMOV['channels']}")
+        print(f"  note: smoothing applied to asimov HISTOGRAMS after splitting")
     print(f"\noutput directories:")
     print(f"  results: {cfg.RESULTS_DIR}")
     print(f"  histograms: {cfg.HISTS_DIR}")

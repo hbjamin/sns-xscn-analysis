@@ -236,3 +236,62 @@ def plot_precision_curves(all_results, exposure_times, signal_channel,
     plt.savefig(output_path, dpi=150)
     print(f"saved precision curves: {output_path}")
     plt.close()
+
+def plot_bias_curves(all_results, exposure_times, signal_channel,
+                         fit_scenario, fit_dimension, output_path):
+    """
+    Plot bias curves for exposure time
+    """
+    
+    if len(all_results) == 0:
+        print("error: no results to plot!")
+        return
+    
+    fig, ax = plt.subplots(figsize=(14, 9))
+    
+    # plot each config
+    for idx, (config_name, result_data) in enumerate(sorted(all_results.items())):
+        
+        avg_bias_percentage = []
+        
+        for years in exposure_times:
+            if years in result_data and len(result_data[years]) > 0:
+                errors = [r['error'] for r in result_data[years] if r['valid']]
+                fitted_vals = [r['fitted'] for r in result_data[years] if r['valid']]
+                
+                if len(errors) > 0 and len(fitted_vals) > 0:
+                    true_val = result_data[years][0]['true_value']
+                    
+                    # average bias percentage
+                    avg_fitted = np.mean(fitted_vals)
+                    avg_bias_percentage.append(100 * (avg_fitted - true_val) / avg_fitted)
+                    
+                else:
+                    avg_bias_percentage.append(np.nan)
+            else:
+                avg_bias_percentage.append(np.nan)
+        
+        # plot lines
+        color = list(cfg.CHANNEL_COLORS.values())[idx % len(cfg.CHANNEL_COLORS)]
+        
+        # bias
+        ax.plot(exposure_times, avg_bias_percentage, 
+                linestyle='-', 
+                label=f"{config_name}", 
+                linewidth=2, color=color)
+    
+    # formatting
+    signal_label = cfg.SIGNAL_LABELS.get(signal_channel, signal_channel)
+    ax.set_xlabel("SNS years", fontsize=16)
+    ax.set_ylabel(f"Average Bias {signal_label} (%)", fontsize=16)
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=9, ncol=2, loc='best')
+    ax.tick_params(labelsize=14)
+    
+    ax.set_xlim(min(exposure_times) - 0.1, max(exposure_times) + 0.1)
+    ax.set_ylim(-50,50)
+    
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150)
+    print(f"saved precision curves: {output_path}")
+    plt.close()
