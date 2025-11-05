@@ -29,6 +29,15 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
         print(f"  skipped: {e}")
         return None, None
     
+    # Ensure smoothing is applied consistently before splitting
+    print("\nApplying smoothing to the entire dataset before splitting:")
+    for key in energy_direction_data:
+        if key in cfg.SMOOTH_ASIMOV['channels']:
+            print(f"  Smoothing {key}...")
+            energy_direction_data[key] = au.smooth_energy_direction_data(
+                energy_direction_data[key], cfg.SMOOTH_ASIMOV['method'], cfg.SMOOTH_ASIMOV['params']
+            )
+
     # filter data to analysis range (now returns neutron_metadata for year scaling)
     filtered_data, filtered_rates, neutron_metadata = au.filter_data_to_analysis_range(
         energy_direction_data, cfg.EVENT_RATES_TOTAL
@@ -54,9 +63,6 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
     
     for key in asimov_hist:
         print(f"  {key}: {np.sum(asimov_hist[key]):.0f} events in asimov histogram")
-    
-    # apply optional smoothing to asimov histograms
-    asimov_hist = au.smooth_asimov_histograms(asimov_hist, fit_dimension)
     
     # determine channels to fit
     channels, signal_channel = cfg.get_channels_for_scenario(fit_scenario)

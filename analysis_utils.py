@@ -11,7 +11,7 @@ import os
 
 import config as cfg
 
-def smooth_pdf_kde(histogram, bin_centers, bandwidth='scott'):
+def smooth_pdf_kde(histogram, bin_centers, params):
     """
     Smooth histogram using kernel density estimation.
     Good for general shapes, automatic bandwidth selection.
@@ -22,14 +22,15 @@ def smooth_pdf_kde(histogram, bin_centers, bandwidth='scott'):
         Histogram values (counts per bin)
     bin_centers : array
         Bin center positions
-    bandwidth : str or float
-        KDE bandwidth method ('scott', 'silverman') or explicit value
+    params : dict
+        Parameters for KDE
     
     Returns
     -------
     smooth_pdf : array
         Smoothed histogram
     """
+    bandwidth = params.get('bandwidth', 'scott')
     # create samples by repeating bin centers
     counts = histogram.astype(int)
     if np.sum(counts) == 0:
@@ -45,7 +46,7 @@ def smooth_pdf_kde(histogram, bin_centers, bandwidth='scott'):
         print("    warning: kde smoothing failed, using original")
         return histogram
 
-def smooth_pdf_spline(histogram, bin_centers, smoothness=1e-3):
+def smooth_pdf_spline(histogram, bin_centers, params):
     """
     Smooth histogram using spline interpolation.
     Good for smooth curves, tunable smoothness parameter.
@@ -56,14 +57,15 @@ def smooth_pdf_spline(histogram, bin_centers, smoothness=1e-3):
         Histogram values
     bin_centers : array
         Bin center positions
-    smoothness : float
-        Spline smoothness parameter (lower = more wiggly)
+    params : dict
+        Parameters for spline
     
     Returns
     -------
     smooth_pdf : array
         Smoothed histogram
     """
+    smoothness = params.get('smoothness', 1e-3)
     try:
         spline = UnivariateSpline(bin_centers, histogram, s=smoothness)
         smooth_pdf = spline(bin_centers)
@@ -73,7 +75,7 @@ def smooth_pdf_spline(histogram, bin_centers, smoothness=1e-3):
         print("    warning: spline smoothing failed, using original")
         return histogram
 
-def smooth_pdf_savgol(histogram, bin_centers, window=11, polyorder=3):
+def smooth_pdf_savgol(histogram, bin_centers, params):
     """
     Smooth histogram using Savitzky-Golay filter.
     Preserves peak positions well, good for spectroscopy data.
@@ -84,16 +86,16 @@ def smooth_pdf_savgol(histogram, bin_centers, window=11, polyorder=3):
         Histogram values
     bin_centers : array
         Bin center positions (not used, but kept for consistency)
-    window : int
-        Window length (must be odd, >= polyorder + 2)
-    polyorder : int
-        Polynomial order (must be < window)
+    params : dict
+        Parameters for Savitzky-Golay filter
     
     Returns
     -------
     smooth_pdf : array
         Smoothed histogram
     """
+    window = params.get('window', 11)
+    polyorder = params.get('polyorder', 3)
     if len(histogram) < window:
         window = len(histogram) if len(histogram) % 2 == 1 else len(histogram) - 1
         if window < polyorder + 2:
@@ -184,11 +186,11 @@ def smooth_asimov_histograms(asimov_hist, fit_dimension):
             bin_centers = 0.5 * (cfg.ENERGY_BINS[1:] + cfg.ENERGY_BINS[:-1])
             
             if method == 'spline':
-                smooth = smooth_pdf_spline(hist, bin_centers, **params)
+                smooth = smooth_pdf_spline(hist, bin_centers, params)
             elif method == 'kde':
-                smooth = smooth_pdf_kde(hist, bin_centers, **params)
+                smooth = smooth_pdf_kde(hist, bin_centers, params)
             elif method == 'savgol':
-                smooth = smooth_pdf_savgol(hist, bin_centers, **params)
+                smooth = smooth_pdf_savgol(hist, bin_centers, params)
             elif method == 'exponential':
                 smooth = smooth_pdf_exponential(hist, bin_centers)
             else:
@@ -204,11 +206,11 @@ def smooth_asimov_histograms(asimov_hist, fit_dimension):
             bin_centers = 0.5 * (cfg.ENERGY_BINS[1:] + cfg.ENERGY_BINS[:-1])
             
             if method == 'spline':
-                smooth_proj = smooth_pdf_spline(energy_proj, bin_centers, **params)
+                smooth_proj = smooth_pdf_spline(energy_proj, bin_centers, params)
             elif method == 'kde':
-                smooth_proj = smooth_pdf_kde(energy_proj, bin_centers, **params)
+                smooth_proj = smooth_pdf_kde(energy_proj, bin_centers, params)
             elif method == 'savgol':
-                smooth_proj = smooth_pdf_savgol(energy_proj, bin_centers, **params)
+                smooth_proj = smooth_pdf_savgol(energy_proj, bin_centers, params)
             elif method == 'exponential':
                 smooth_proj = smooth_pdf_exponential(energy_proj, bin_centers)
             else:
@@ -325,11 +327,11 @@ def smooth_asimov_histograms(asimov_hist, fit_dimension):
             bin_centers = 0.5 * (cfg.ENERGY_BINS[1:] + cfg.ENERGY_BINS[:-1])
             
             if method == 'spline':
-                smooth = smooth_pdf_spline(hist, bin_centers, **params)
+                smooth = smooth_pdf_spline(hist, bin_centers, params)
             elif method == 'kde':
-                smooth = smooth_pdf_kde(hist, bin_centers, **params)
+                smooth = smooth_pdf_kde(hist, bin_centers, params)
             elif method == 'savgol':
-                smooth = smooth_pdf_savgol(hist, bin_centers, **params)
+                smooth = smooth_pdf_savgol(hist, bin_centers, params)
             elif method == 'exponential':
                 smooth = smooth_pdf_exponential(hist, bin_centers)
             else:
@@ -345,11 +347,11 @@ def smooth_asimov_histograms(asimov_hist, fit_dimension):
             bin_centers = 0.5 * (cfg.ENERGY_BINS[1:] + cfg.ENERGY_BINS[:-1])
             
             if method == 'spline':
-                smooth_proj = smooth_pdf_spline(energy_proj, bin_centers, **params)
+                smooth_proj = smooth_pdf_spline(energy_proj, bin_centers, params)
             elif method == 'kde':
-                smooth_proj = smooth_pdf_kde(energy_proj, bin_centers, **params)
+                smooth_proj = smooth_pdf_kde(energy_proj, bin_centers, params)
             elif method == 'savgol':
-                smooth_proj = smooth_pdf_savgol(energy_proj, bin_centers, **params)
+                smooth_proj = smooth_pdf_savgol(energy_proj, bin_centers, params)
             elif method == 'exponential':
                 smooth_proj = smooth_pdf_exponential(energy_proj, bin_centers)
             else:
@@ -557,12 +559,8 @@ def make_toy_datasets_with_poisson_and_flux(toy_data_pool, filtered_rates, years
     for key in toy_data_pool.keys():
         energies, directions = toy_data_pool[key]
 
-        #### FIXME 
-        
         # calculate expected rate for this channel
         if key == 'neutrons' and neutron_metadata and neutrons_per_mw is not None:
-            print("got neutron metadata")
-            # calculate neutron rate based on toy pool size
             base_rate = calculate_neutron_rate_for_pool(
                 len(energies), neutron_metadata, neutrons_per_mw
             )
@@ -579,6 +577,10 @@ def make_toy_datasets_with_poisson_and_flux(toy_data_pool, filtered_rates, years
             
             # apply poisson fluctuation
             n_events = np.random.poisson(expected_rate * years)
+            
+            # ensure neutron toy datasets are populated correctly
+            if key == 'neutrons' and n_events == 0:
+                n_events = 1  # ensure at least one neutron event
             
             # sample with replacement from toy pool
             if len(energies) > 0 and n_events > 0:
@@ -791,3 +793,39 @@ def fit_with_extended_binned_nll(fit_data, channels_to_fit, norm_pdf_luts,
         pass  # fall back to hesse errors
     
     return m
+
+def smooth_energy_direction_data(data, method, params):
+    """
+    Smooth the energy and direction data for a given channel.
+
+    Parameters:
+    - data: Tuple containing energy, direction, ntrig, and nsim.
+    - method: Smoothing method (e.g., 'spline', 'kde').
+    - params: Parameters for the smoothing method.
+
+    Returns:
+    - Smoothed data tuple (energy, direction, ntrig, nsim).
+    """
+    energy, direction, ntrig, nsim = data
+
+    # Smooth energy
+    bin_centers = 0.5 * (cfg.ENERGY_BINS[1:] + cfg.ENERGY_BINS[:-1])
+    hist, _ = np.histogram(energy, bins=cfg.ENERGY_BINS)
+
+    if method == 'spline':
+        smoothed_hist = smooth_pdf_spline(hist, bin_centers, params)
+    elif method == 'kde':
+        smoothed_hist = smooth_pdf_kde(hist, bin_centers, params)
+    elif method == 'savgol':
+        smoothed_hist = smooth_pdf_savgol(hist, bin_centers, params)
+    elif method == 'exponential':
+        smoothed_hist = smooth_pdf_exponential(hist, bin_centers)
+    else:
+        smoothed_hist = hist
+
+    # Resample energy based on smoothed histogram
+    probabilities = smoothed_hist / np.sum(smoothed_hist)
+    sampled_indices = np.random.choice(len(bin_centers), size=len(energy), p=probabilities, replace=True)
+    smoothed_energy = bin_centers[sampled_indices]
+
+    return smoothed_energy, direction, ntrig, nsim

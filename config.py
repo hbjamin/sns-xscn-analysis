@@ -94,6 +94,7 @@ SMOOTH_ASIMOV = {
         'spline': {'smoothness': 1e-3},
         'kde': {'bandwidth': 'scott'},
         'savgol': {'window': 11, 'polyorder': 3},
+        'exponential': {}  # No additional parameters for exponential
     }
 }
 
