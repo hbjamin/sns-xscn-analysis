@@ -31,8 +31,9 @@ ENERGY_MIN = 0.0
 ENERGY_MAX = 75.0
 
 # binning
-ENERGY_BINS = np.arange(ENERGY_MIN, ENERGY_MAX + 1.25, 1.25)
-DIRECTION_BINS = np.linspace(-1, 1, 20)
+#ENERGY_BINS = np.arange(ENERGY_MIN, ENERGY_MAX + 1.25, 1.25)
+ENERGY_BINS = np.arange(ENERGY_MIN, ENERGY_MAX + 5, 5)
+DIRECTION_BINS = np.linspace(-1, 1, 16)
 
 FIT_SCENARIO = "oxygen" # oxygen/gallium
 FIT_DIMENSION = "2D" # 1D/2D
@@ -75,7 +76,7 @@ CONFIGS = [
 ]
 
 # number of toy datasets
-N_TOYS = 10  # increase for production (e.g. 1000)
+N_TOYS = 100 # increase for production (e.g. 1000)
 
 # exposure times to analyze (years)
 EXPOSURE_TIMES = [0.5, 1.0, 2.0, 3.0]
@@ -88,10 +89,10 @@ ASIMOV_FRACTION = 0.5
 # happens BEFORE splitting into asimov/toy pools
 SMOOTH_ASIMOV = {
     'enabled': True,  # toggle on/off
-    'channels': ['cosmics', 'neutrons'],  # which channels to smooth
-    'method': 'spline',  # 'kde', 'spline', 'savgol', 'exponential'
+    'channels': ['neutrons', 'cosmics'],  # which channels to smooth
+    'method': 'kde',  # 'kde', 'spline', 'savgol', 'exponential'
     'params': {
-        'spline': {'smoothness': 1e-3},
+        'spline': {'smoothness': 1},
         'kde': {'bandwidth': 'scott'},
         'savgol': {'window': 11, 'polyorder': 3},
         'exponential': {}  # No additional parameters for exponential

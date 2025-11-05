@@ -27,6 +27,11 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
     except FileNotFoundError as e:
         print(f"  skipped: {e}")
         return None, None
+
+    # filter data to analysis range (now returns neutron_metadata for year scaling)
+    filtered_data, filtered_rates, neutron_metadata = au.filter_data_to_analysis_range(
+        energy_direction_data, cfg.EVENT_RATES_TOTAL
+    )
     
     # Apply smoothing to the entire dataset BEFORE splitting (if enabled)
     if cfg.SMOOTH_ASIMOV['enabled']:
@@ -40,10 +45,6 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
                     cfg.SMOOTH_ASIMOV['params']
                 )
     
-    # filter data to analysis range (now returns neutron_metadata for year scaling)
-    filtered_data, filtered_rates, neutron_metadata = au.filter_data_to_analysis_range(
-        energy_direction_data, cfg.EVENT_RATES_TOTAL
-    )
     
     # Calculate neutron rate here (once for all exposure times)
     if neutron_metadata:
