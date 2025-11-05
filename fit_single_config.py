@@ -23,14 +23,14 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
         energy_direction_data[ch] = (energy, direction, ntrig, nsim)
     
     try:
-        neutron_data = au.load_neutrons_and_scale(detector_name, shielding, neutrons_per_mw)
+        neutron_data = au.load_and_spectrum_weight_neutrons(detector_name, shielding)
         energy_direction_data['neutrons'] = neutron_data
     except FileNotFoundError as e:
         print(f"  skipped: {e}")
         return None, None
     
-    # filter data to analysis range
-    filtered_data, filtered_rates = au.filter_data_to_analysis_range(
+    # filter data to analysis range (now returns neutron_metadata for year scaling)
+    filtered_data, filtered_rates, neutron_metadata = au.filter_data_to_analysis_range(
         energy_direction_data, cfg.EVENT_RATES_TOTAL
     )
     
@@ -39,11 +39,6 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
           f"{1-cfg.ASIMOV_FRACTION:.0%} for toys")
     asimov_data, toy_data = au.split_data_for_asimov_and_toys(
         filtered_data, cfg.ASIMOV_FRACTION
-    )
-    
-    # rescale neutron rate after split
-    filtered_rates = au.rescale_neutron_rate_after_split(
-        filtered_rates, cfg.ASIMOV_FRACTION
     )
     
     # create asimov histograms from asimov pool only
@@ -59,6 +54,9 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
     
     for key in asimov_hist:
         print(f"  {key}: {np.sum(asimov_hist[key]):.0f} events in asimov histogram")
+    
+    # apply optional smoothing to asimov histograms
+    asimov_hist = au.smooth_asimov_histograms(asimov_hist, fit_dimension)
     
     # determine channels to fit
     channels, signal_channel = cfg.get_channels_for_scenario(fit_scenario)
@@ -99,7 +97,8 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
         for toy_idx in range(cfg.N_TOYS):
             # generate one toy dataset from toy pool
             toy_datasets = au.make_toy_datasets_with_poisson_and_flux(
-                toy_data, filtered_rates, years, ngroups=1
+                toy_data, filtered_rates, years, ngroups=1,
+                neutron_metadata=neutron_metadata, neutrons_per_mw=neutrons_per_mw
             )
             
             # make histogram for this toy
@@ -131,7 +130,7 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
                 if toy_idx == 0:
                     print(f"\nexample fit result:")
                     for ch in channels:
-                        print(f"  {ch}: {m.values[ch]:.1f} ± {m.errors[ch]:.1f}")
+                        print(f"  {ch}: {m.values[ch]:.1f} Â± {m.errors[ch]:.1f}")
             except Exception as e:
                 print(f"  error: fit {toy_idx+1} failed: {e}")
                 continue

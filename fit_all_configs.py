@@ -22,14 +22,14 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
         energy_direction_data[ch] = (energy, direction, ntrig, nsim)
     
     try:
-        neutron_data = au.load_neutrons_and_scale(detector_name, shielding, neutrons_per_mw)
+        neutron_data = au.load_and_spectrum_weight_neutrons(detector_name, shielding)
         energy_direction_data['neutrons'] = neutron_data
     except FileNotFoundError as e:
         print(f"  skipped: {e}")
         return None, None
     
-    # filter data to analysis range
-    filtered_data, filtered_rates = au.filter_data_to_analysis_range(
+    # filter data to analysis range (now returns neutron_metadata for year scaling)
+    filtered_data, filtered_rates, neutron_metadata = au.filter_data_to_analysis_range(
         energy_direction_data, cfg.EVENT_RATES_TOTAL
     )
     
@@ -40,16 +40,11 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
         filtered_data, cfg.ASIMOV_FRACTION
     )
     
-    # rescale neutron rate after split (important!)
-    filtered_rates = au.rescale_neutron_rate_after_split(
-        filtered_rates, cfg.ASIMOV_FRACTION
-    )
-    
     # create asimov histograms from asimov pool only
-    print(f"\ncreating asimov pdf ({fit_dimension}) from asimov pool:")
-    binning = cfg.get_binning(fit_dimension)
+    print(f"\ncreating asimov pdf ({cfg.FIT_DIMENSION}) from asimov pool:")
+    binning = cfg.get_binning(cfg.FIT_DIMENSION)
     
-    if fit_dimension == "1D":
+    if cfg.FIT_DIMENSION == "1D":
         asimov_hist = {key: np.histogram(asimov_data[key][0], binning)[0] 
                       for key in asimov_data}
     else:
@@ -58,6 +53,9 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
     
     for key in asimov_hist:
         print(f"  {key}: {np.sum(asimov_hist[key]):.0f} events in asimov histogram")
+
+    # apply optional smoothing to asimov histograms
+    asimov_hist = au.smooth_asimov_histograms(asimov_hist, cfg.FIT_DIMENSION)
     
     # determine channels to fit
     channels, signal_channel = cfg.get_channels_for_scenario(fit_scenario)
@@ -70,22 +68,22 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
         print(f"exposure: {years} years")
         print(f"{'='*60}")
         
-        # normalize and scale asimov
+        # normalize and scale asimov (just for plotting)
         asimov_normalized, asimov_scaled = au.normalize_and_scale_asimov(
             asimov_hist, years, filtered_rates
         )
         
-        # make interpolated pdfs
+        # make interpolated pdfs (for fitting)
         norm_pdf_luts, pdfs, bin_centers = au.make_normalized_interpolated_pdf(
-            asimov_normalized, fit_dimension
+            asimov_normalized, cfg.FIT_DIMENSION 
         )
         
         # plot asimov projections (once per scenario)
         if years == cfg.EXPOSURE_TIMES[0]:
             output_path = (cfg.HISTS_DIR / 
-                          f'asimov_projections_{detector_name}_{neutrons_per_mw}npmw_{shielding}_{fit_dimension}.png')
-            pu.plot_asimov_projections(asimov_scaled, years, output_path, fit_dimension)
-        
+                          f'asimov_projections_{detector_name}_{neutrons_per_mw}npmw_{shielding}_{cfg.FIT_DIMENSION}.png')
+            pu.plot_asimov_projections(asimov_scaled, years, output_path)
+
         # calculate total expected events
         total_events = sum(filtered_rates[ch] for ch in filtered_rates.keys())
         
@@ -94,15 +92,18 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
         print(f"\ngenerating and fitting {cfg.N_TOYS} toy datasets...")
         fit_results = []
         last_toy_hist = None
+
+        ##### FIXME should smooth entire neutron sample BEFORE splitting so applied to both 
         
         for toy_idx in range(cfg.N_TOYS):
             # generate one toy dataset from toy pool
             toy_datasets = au.make_toy_datasets_with_poisson_and_flux(
-                toy_data, filtered_rates, years, ngroups=1
+                toy_data, filtered_rates, years, ngroups=1,
+                neutron_metadata=neutron_metadata, neutrons_per_mw=neutrons_per_mw
             )
             
             # make histogram for this toy
-            if fit_dimension == "1D":
+            if cfg.FIT_DIMENSION == "1D":
                 toy_hist = {key: np.histogram(toy_datasets[key][0][0], binning)[0] 
                            for key in toy_data}
             else:
@@ -123,14 +124,14 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
             try:
                 m = au.fit_with_extended_binned_nll(
                     fit_data, channels, norm_pdf_luts, years, total_events,
-                    fit_scenario, fit_dimension, binning, filtered_rates
+                    fit_scenario, cfg.FIT_DIMENSION, binning, filtered_rates
                 )
                 fit_results.append(m)
                 
                 if toy_idx == 0:
                     print(f"\nexample fit result:")
                     for ch in channels:
-                        print(f"  {ch}: {m.values[ch]:.1f} ± {m.errors[ch]:.1f}")
+                        print(f"  {ch}: {m.values[ch]:.1f} Â± {m.errors[ch]:.1f}")
             except Exception as e:
                 print(f"  error: fit {toy_idx+1} failed: {e}")
                 continue
@@ -157,9 +158,9 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
         # plot asimov + last toy overlaid
         if last_toy_hist is not None:
             output_path = (cfg.HISTS_DIR / 
-                          f'asimov_toys_{detector_name}_{neutrons_per_mw}npmw_{shielding}_{years}yr_{fit_dimension}.png')
+                          f'asimov_toys_{detector_name}_{neutrons_per_mw}npmw_{shielding}_{years}yr_{cfg.FIT_DIMENSION}.png')
             pu.plot_asimov_and_fit_group_projections(
-                asimov_scaled, [last_toy_hist], years, output_path, fit_dimension, n_toys_to_plot=1
+                asimov_scaled, [last_toy_hist], years, output_path, n_toys_to_plot=1
             )
             del last_toy_hist
         
@@ -202,14 +203,12 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
 if __name__ == "__main__":
     
     # configuration
-    FIT_SCENARIO = "oxygen"  # oxygen/gallium
-    FIT_DIMENSION = "2D"     # 1d/2d
     
     print(f"{'='*80}")
     print("sns cross-section sensitivity analysis")
     print(f"{'='*80}")
-    print(f"fit scenario: {FIT_SCENARIO}")
-    print(f"fit dimension: {FIT_DIMENSION}")
+    print(f"fit scenario: {cfg.FIT_SCENARIO}")
+    print(f"fit dimension: {cfg.FIT_DIMENSION}")
     print(f"n_toys: {cfg.N_TOYS}")
     print(f"exposure times: {cfg.EXPOSURE_TIMES}")
     print(f"asimov fraction: {cfg.ASIMOV_FRACTION:.0%}")
@@ -227,7 +226,7 @@ if __name__ == "__main__":
         print(f"{'='*80}")
         
         channel_cache = {}
-        channels_to_load = cfg.get_channels_to_load(FIT_SCENARIO)
+        channels_to_load = cfg.get_channels_to_load(cfg.FIT_SCENARIO)
         
         for channel_name in channels_to_load:
             print(f"  {channel_name}:")
@@ -241,7 +240,7 @@ if __name__ == "__main__":
         # run analysis
         results, signal_channel = run_scenario_analysis(
             channel_cache, shielding, neutrons_per_mw, detector_name,
-            FIT_SCENARIO, FIT_DIMENSION
+            cfg.FIT_SCENARIO, cfg.FIT_DIMENSION
         )
         
         if results is not None:
@@ -254,7 +253,7 @@ if __name__ == "__main__":
         print("plotting precision curves")
         print("="*80)
         
-        output_path = cfg.HISTS_DIR / f'precision_curves_{FIT_SCENARIO}_{FIT_DIMENSION}.png'
+        output_path = cfg.HISTS_DIR / f'precision_curves_{cfg.FIT_SCENARIO}_{cfg.FIT_DIMENSION}.png'
         pu.plot_precision_curves(
             all_results_by_config, cfg.EXPOSURE_TIMES, signal_channel,
             FIT_SCENARIO, FIT_DIMENSION, output_path

@@ -34,6 +34,9 @@ ENERGY_MAX = 75.0
 ENERGY_BINS = np.arange(ENERGY_MIN, ENERGY_MAX + 1.25, 1.25)
 DIRECTION_BINS = np.linspace(-1, 1, 20)
 
+FIT_SCENARIO = "oxygen" # oxygen/gallium
+FIT_DIMENSION = "2D" # 1D/2D
+
 # flux uncertainties (only applied to neutrino channels)
 FLUX_ERR = {
     'eES': 0.03,
@@ -80,6 +83,19 @@ EXPOSURE_TIMES = [0.5, 1.0, 2.0, 3.0]
 # fraction of data for asimov pdf (rest for toys)
 # 0.5 = 50% for asimov, 50% for toy sampling (no overlap!)
 ASIMOV_FRACTION = 0.5
+
+# smoothing configuration for asimov histograms
+# happens before normalization and plotting
+SMOOTH_ASIMOV = {
+    'enabled': False,  # toggle on/off
+    'channels': ['cosmics', 'neutrons'],  # which channels to smooth
+    'method': 'spline',  # 'kde', 'spline', 'savgol', 'exponential'
+    'params': {
+        'spline': {'smoothness': 1e-3},
+        'kde': {'bandwidth': 'scott'},
+        'savgol': {'window': 11, 'polyorder': 3},
+    }
+}
 
 # channel display labels
 CHANNEL_LABELS = {
