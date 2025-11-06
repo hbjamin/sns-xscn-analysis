@@ -41,7 +41,7 @@ CONFIGS=(
 FIT_SCENARIOS=("oxygen")
 
 # Fit dimensions to run
-FIT_DIMENSIONS=("1D 2D")
+FIT_DIMENSIONS=("2D")
 
 # Loop through all combinations
 echo "Submitting jobs..."

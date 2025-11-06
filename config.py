@@ -31,12 +31,12 @@ ENERGY_MIN = 0.0
 ENERGY_MAX = 75.0
 
 # binning
-ENERGY_BINS = np.arange(ENERGY_MIN, ENERGY_MAX + 1.25, 1.25)
-#ENERGY_BINS = np.arange(ENERGY_MIN, ENERGY_MAX + 5, 5)
+# ENERGY_BINS = np.arange(ENERGY_MIN, ENERGY_MAX + 1.25, 1.25)
+ENERGY_BINS = np.arange(ENERGY_MIN, ENERGY_MAX + 5, 5)
 DIRECTION_BINS = np.linspace(-1, 1, 16)
 
 FIT_SCENARIO = "oxygen" # oxygen/gallium
-FIT_DIMENSION = "1D" # 1D/2D
+FIT_DIMENSION = "2D" # 1D/2D
 
 # flux uncertainties (only applied to neutrino channels)
 FLUX_ERR = {
@@ -76,7 +76,7 @@ CONFIGS = [
 ]
 
 # number of toy datasets
-N_TOYS = 100 # increase for production (e.g. 1000)
+N_TOYS = 2 # increase for production (e.g. 1000)
 
 # exposure times to analyze (years)
 EXPOSURE_TIMES = [0.5, 1.0, 2.0, 3.0]
@@ -92,10 +92,11 @@ ASIMOV_FRACTION = 0.5
 # - Smooth ONLY the asimov histogram (not the toy pool!)
 # - Toy datasets should retain natural statistical fluctuations
 SMOOTH_ASIMOV = {
-    'enabled': True,  # toggle on/off
+    'enabled': False,  # toggle on/off
     'channels': ['neutrons', 'cosmics'],  # which ASIMOV histograms to smooth
-    'method': 'spline',  # 'kde', 'spline', 'savgol', 'exponential'
+    'method': 'gaussian',  # 'gaussian' (best for 1D & 2D), 'kde', 'spline', 'savgol', 'exponential' (1D only)
     'params': {
+        'gaussian': {'sigma': 0.5},  # NEW: Recommended method - works for 1D and 2D!
         'spline': {'smoothness': 1},
         'kde': {'bandwidth': 'scott'},
         'savgol': {'window': 11, 'polyorder': 3},

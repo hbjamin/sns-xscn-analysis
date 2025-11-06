@@ -150,7 +150,7 @@ def plot_asimov_and_fit_group_projections(asimov_hist, fitgroups_hist, years, ou
     plt.close()
 
 def plot_precision_curves(all_results, exposure_times, signal_channel,
-                         fit_scenario, fit_dimension, output_path):
+                         fit_dimension, output_path):
     """
     Plot precision curves showing statistical uncertainty vs exposure time.
     
@@ -238,7 +238,7 @@ def plot_precision_curves(all_results, exposure_times, signal_channel,
     plt.close()
 
 def plot_bias_curves(all_results, exposure_times, signal_channel,
-                         fit_scenario, fit_dimension, output_path):
+                         fit_dimension, output_path):
     """
     Plot bias curves for exposure time
     """
@@ -246,6 +246,8 @@ def plot_bias_curves(all_results, exposure_times, signal_channel,
     if len(all_results) == 0:
         print("error: no results to plot!")
         return
+
+    print(all_results)
     
     fig, ax = plt.subplots(figsize=(14, 9))
     
@@ -264,7 +266,7 @@ def plot_bias_curves(all_results, exposure_times, signal_channel,
                     
                     # average bias percentage
                     avg_fitted = np.mean(fitted_vals)
-                    avg_bias_percentage.append(100 * (avg_fitted - true_val) / avg_fitted)
+                    avg_bias_percentage.append(100 * (avg_fitted - true_val) / true_val)
                     
                 else:
                     avg_bias_percentage.append(np.nan)
@@ -289,7 +291,7 @@ def plot_bias_curves(all_results, exposure_times, signal_channel,
     ax.tick_params(labelsize=14)
     
     ax.set_xlim(min(exposure_times) - 0.1, max(exposure_times) + 0.1)
-    ax.set_ylim(-50,50)
+    #ax.set_ylim(-50,50)
     
     plt.tight_layout()
     plt.savefig(output_path, dpi=150)

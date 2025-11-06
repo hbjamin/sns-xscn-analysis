@@ -6,15 +6,50 @@ from scipy.interpolate import RegularGridInterpolator, interp1d
 from scipy.stats import gaussian_kde
 from scipy.interpolate import UnivariateSpline
 from scipy.signal import savgol_filter
+from scipy.ndimage import gaussian_filter  # NEW: Added for Gaussian smoothing
 from scipy.optimize import curve_fit
 import os
 
 import config as cfg
 
+def smooth_pdf_gaussian(histogram, bin_centers, params):
+    """
+    Smooth histogram using Gaussian filter.
+    Works for both 1D and 2D histograms - the best general-purpose smoothing method.
+    
+    Parameters
+    ----------
+    histogram : array
+        Histogram values (1D or 2D array)
+    bin_centers : array or tuple
+        Bin center positions (not used but kept for API consistency)
+    params : dict
+        Parameters for Gaussian filter. Should contain 'sigma' key.
+        For 1D: sigma can be a float
+        For 2D: sigma can be a float (same for both dims) or [sigma_x, sigma_y]
+    
+    Returns
+    -------
+    smooth_pdf : array
+        Smoothed histogram (same shape as input)
+    """
+    sigma = params.get('sigma', 1.0)
+    
+    try:
+        # gaussian_filter works for any dimensionality
+        smooth_pdf = gaussian_filter(histogram, sigma=sigma, mode='reflect')
+        # force non-negative (Gaussian smoothing can occasionally produce tiny negative values)
+        smooth_pdf = np.maximum(smooth_pdf, 0)
+        return smooth_pdf
+    except (ValueError, RuntimeError) as e:
+        print(f"    warning: gaussian smoothing failed ({e}), using original")
+        return histogram
+
 def smooth_pdf_kde(histogram, bin_centers, params):
     """
     Smooth histogram using kernel density estimation.
     Good for general shapes, automatic bandwidth selection.
+    ONLY WORKS FOR 1D HISTOGRAMS.
     
     Parameters
     ----------
@@ -50,6 +85,7 @@ def smooth_pdf_spline(histogram, bin_centers, params):
     """
     Smooth histogram using spline interpolation.
     Good for smooth curves, tunable smoothness parameter.
+    ONLY WORKS FOR 1D HISTOGRAMS.
     
     Parameters
     ----------
@@ -79,6 +115,7 @@ def smooth_pdf_savgol(histogram, bin_centers, params):
     """
     Smooth histogram using Savitzky-Golay filter.
     Preserves peak positions well, good for spectroscopy data.
+    ONLY WORKS FOR 1D HISTOGRAMS.
     
     Parameters
     ----------
@@ -114,6 +151,7 @@ def smooth_pdf_exponential(histogram, bin_centers, params=None):
     """
     Smooth histogram by fitting exponential decay.
     Good for falling spectra - physics-motivated for backgrounds.
+    ONLY WORKS FOR 1D HISTOGRAMS.
     
     Parameters
     ----------
@@ -162,18 +200,19 @@ def smooth_asimov_histogram(histogram, method, params, bin_centers):
     Parameters
     ----------
     histogram : array
-        Raw histogram from asimov pool
+        Raw histogram from asimov pool (1D or 2D)
     method : str
-        Smoothing method: 'spline', 'kde', 'savgol', or 'exponential'
+        Smoothing method: 'gaussian', 'spline', 'kde', 'savgol', or 'exponential'
+        Note: Only 'gaussian' works for 2D histograms
     params : dict
         Dictionary of parameters for all methods
-    bin_centers : array
-        Bin center positions (for 1D histograms)
+    bin_centers : array or tuple
+        Bin center positions (for 1D: array, for 2D: tuple of arrays)
     
     Returns
     -------
     smoothed_histogram : array
-        Smoothed histogram
+        Smoothed histogram (same shape as input)
     """
     # Get method-specific parameters
     if method in params:
@@ -182,8 +221,20 @@ def smooth_asimov_histogram(histogram, method, params, bin_centers):
         print(f"    warning: no parameters found for method '{method}', using defaults")
         method_params = {}
     
+    # Check dimensionality
+    ndim = histogram.ndim
+    
+    # For 2D histograms, only Gaussian smoothing is supported
+    if ndim == 2 and method != 'gaussian':
+        print(f"    warning: method '{method}' only works for 1D histograms")
+        print(f"    falling back to 'gaussian' smoothing for 2D histogram")
+        method = 'gaussian'
+        method_params = params.get('gaussian', {'sigma': 1.0})
+    
     # Apply smoothing based on method
-    if method == 'spline':
+    if method == 'gaussian':
+        smoothed = smooth_pdf_gaussian(histogram, bin_centers, method_params)
+    elif method == 'spline':
         smoothed = smooth_pdf_spline(histogram, bin_centers, method_params)
     elif method == 'kde':
         smoothed = smooth_pdf_kde(histogram, bin_centers, method_params)

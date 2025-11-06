@@ -60,19 +60,30 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
     
     for key in asimov_hist:
         print(f"  {key}: {np.sum(asimov_hist[key]):.0f} events in asimov histogram")
-    
+
     # NEW: Apply smoothing to asimov histograms AFTER histogram creation
     # This is the statistically correct approach - we smooth the histogram itself,
     # not the underlying events. The toy pool remains completely unsmoothed.
-    if cfg.SMOOTH_ASIMOV['enabled'] and cfg.FIT_DIMENSION == "1D":
+    # NOW WORKS FOR BOTH 1D AND 2D!
+    if cfg.SMOOTH_ASIMOV['enabled']:
         print(f"\nsmoothing asimov histograms (method: {cfg.SMOOTH_ASIMOV['method']}):")
-        bin_centers = 0.5 * (cfg.ENERGY_BINS[1:] + cfg.ENERGY_BINS[:-1])
+        
+        # Get bin centers for the appropriate dimensionality
+        if cfg.FIT_DIMENSION == "1D":
+            bin_centers = 0.5 * (cfg.ENERGY_BINS[1:] + cfg.ENERGY_BINS[:-1])
+        else:  # 2D
+            # For 2D, bin_centers is a tuple but not used by gaussian_filter
+            # We keep it for API consistency
+            bin_centers = (
+                0.5 * (cfg.ENERGY_BINS[1:] + cfg.ENERGY_BINS[:-1]),
+                0.5 * (cfg.DIRECTION_BINS[1:] + cfg.DIRECTION_BINS[:-1])
+            )
         
         for key in asimov_hist:
             if key in cfg.SMOOTH_ASIMOV['channels']:
                 original_sum = np.sum(asimov_hist[key])
                 
-                # Smooth the histogram directly
+                # Smooth the histogram directly (works for 1D and 2D!)
                 asimov_hist[key] = au.smooth_asimov_histogram(
                     asimov_hist[key],
                     cfg.SMOOTH_ASIMOV['method'],
@@ -85,10 +96,7 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
                 if smoothed_sum > 0:
                     asimov_hist[key] = asimov_hist[key] * (original_sum / smoothed_sum)
                 
-                print(f"  {key}: smoothed (preserved {original_sum:.0f} events)")
-    elif cfg.SMOOTH_ASIMOV['enabled'] and cfg.FIT_DIMENSION == "2D":
-        print(f"\nwarning: smoothing not yet implemented for 2D histograms")
-        print(f"  (asimov histograms will remain unsmoothed)")
+                print(f"  {key}: smoothed (preserved {original_sum:.0f} events)") 
 
     # determine channels to fit
     channels, signal_channel = cfg.get_channels_for_scenario(fit_scenario)
@@ -283,22 +291,20 @@ if __name__ == "__main__":
             config_key = f"{detector_name}_{shielding}_{neutrons_per_mw}npmw"
             all_results_by_config[config_key] = results
     
-    # plot precision curves
+    # plot precision and bias  curves
     if len(all_results_by_config) > 0:
         print("\n" + "="*80)
-        print("plotting precision curves")
+        print("plotting precision and bias curves")
         print("="*80)
         
         output_path = cfg.HISTS_DIR / f'precision_curves_{cfg.FIT_SCENARIO}_{cfg.FIT_DIMENSION}.png'
         pu.plot_precision_curves(
-            all_results_by_config, cfg.EXPOSURE_TIMES, signal_channel,
-            cfg.FIT_SCENARIO, cfg.FIT_DIMENSION, output_path
+            all_results_by_config, cfg.EXPOSURE_TIMES, cfg.FIT_SCENARIO, cfg.FIT_DIMENSION, output_path
         )
 
         output_path = cfg.HISTS_DIR / f'bias_curves_{cfg.FIT_SCENARIO}_{cfg.FIT_DIMENSION}.png'
         pu.plot_bias_curves(
-            all_results_by_config, cfg.EXPOSURE_TIMES, signal_channel,
-            cfg.FIT_SCENARIO, cfg.FIT_DIMENSION, output_path
+            all_results_by_config, cfg.EXPOSURE_TIMES, cfg.FIT_SCENARIO, cfg.FIT_DIMENSION, output_path
         )
     
     print("\n" + "=" * 80)
