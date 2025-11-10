@@ -16,15 +16,32 @@ FILTER_FIT_SCENARIO = "oxygen"  # oxygen/gallium/none
 FILTER_FIT_DIMENSION = "2D"     # 1d/2d/none
 
 def load_all_results(results_dir, filter_scenario=None, filter_dimension=None):
+    """
+    Load all result pickle files and return in standardized format.
+    
+    Returns
+    -------
+    results_for_plotting : dict
+        Results in format: {config_key: {year: [fit_results]}}
+    metadata : dict
+        Metadata from results: signal_channel, exposure_times, fit_scenario, fit_dimension
+    """
     result_files = sorted(results_dir.glob("results_*.pkl"))
     
     if len(result_files) == 0:
         print(f"error: no result files found in {results_dir}")
-        return {}
+        return {}, {}
     
     print(f"found {len(result_files)} result files")
     
-    all_results = {}
+    results_for_plotting = {}
+    metadata = {
+        'signal_channel': None,
+        'exposure_times': None,
+        'fit_scenario': None,
+        'fit_dimension': None
+    }
+    
     for result_file in result_files:
         try:
             with open(result_file, 'rb') as f:
@@ -41,13 +58,16 @@ def load_all_results(results_dir, filter_scenario=None, filter_dimension=None):
             # create config key
             config_key = f"{config['detector']}_{config['shielding']}_{config['neutrons_per_mw']}npmw"
             
-            # store data
-            all_results[config_key] = {
-                'config': config,
-                'signal_channel': data['signal_channel'],
-                'exposure_times': data['exposure_times'],
-                'results': data['results']
-            }
+            # Extract just the results dict (not the wrapper)
+            # This matches the format used by fit_all_configs.py
+            results_for_plotting[config_key] = data['results']
+            
+            # Store metadata from first file
+            if metadata['signal_channel'] is None:
+                metadata['signal_channel'] = data['signal_channel']
+                metadata['exposure_times'] = data['exposure_times']
+                metadata['fit_scenario'] = config['fit_scenario']
+                metadata['fit_dimension'] = config['fit_dimension']
             
             print(f"  loaded: {config_key} ({config['fit_scenario']}, {config['fit_dimension']})")
             
@@ -55,194 +75,29 @@ def load_all_results(results_dir, filter_scenario=None, filter_dimension=None):
             print(f"  error loading {result_file}: {e}")
             continue
     
-    return all_results
+    return results_for_plotting, metadata
 
-def plot_precision_curves(all_results, output_path, detector_filter=None):
-    # filter results by detector type if specified
-    if detector_filter:
-        filtered_results = {k: v for k, v in all_results.items() 
-                           if k.startswith(detector_filter)}
-        if len(filtered_results) == 0:
-            print(f"warning: no results found for detector type '{detector_filter}'")
-            return
-        plot_results = filtered_results
-        detector_label = detector_filter.upper()
-    else:
-        plot_results = all_results
-        detector_label = "all detectors"
+def create_comparison_table(all_results, metadata):
+    """
+    Print a comparison table of results across all configurations.
     
-    if len(plot_results) == 0:
-        print("error: no results to plot!")
-        return
-    
-    # get signal channel and exposure times from first result
-    first_result = list(plot_results.values())[0]
-    signal_channel = first_result['signal_channel']
-    exposure_times = first_result['exposure_times']
-    fit_scenario = first_result['config']['fit_scenario']
-    fit_dimension = first_result['config']['fit_dimension']
-    
-    # create figure
-    fig, ax = plt.subplots(figsize=(14, 9))
-    
-    # plot each config
-    for idx, (config_name, result_data) in enumerate(sorted(plot_results.items())):
-        results = result_data['results']
-        
-        minuit_precisions = []
-        bias_corrected_precisions = []
-        
-        for years in exposure_times:
-            if years in results and len(results[years]) > 0:
-                # get errors and fitted values from valid fits
-                errors = [r['error'] for r in results[years] if r['valid']]
-                fitted_vals = [r['fitted'] for r in results[years] if r['valid']]
-                
-                if len(errors) > 0 and len(fitted_vals) > 0:
-                    # get true value
-                    true_val = results[years][0]['true_value']
-                    
-                    # calculate minuit statistical precision
-                    avg_error = np.mean(errors)
-                    avg_fitted = np.mean(fitted_vals)
-                    minuit_precision = 100 * avg_error / avg_fitted
-                    minuit_precisions.append(minuit_precision)
-                    
-                    # calculate bias-corrected rms
-                    bias = avg_fitted - true_val
-                    corrected_rms = np.sqrt(np.mean([(v - bias - true_val)**2 for v in fitted_vals]))
-                    bias_corr_precision = 100 * corrected_rms / true_val
-                    bias_corrected_precisions.append(bias_corr_precision)
-                else:
-                    minuit_precisions.append(np.nan)
-                    bias_corrected_precisions.append(np.nan)
-            else:
-                minuit_precisions.append(np.nan)
-                bias_corrected_precisions.append(np.nan)
-        
-        # plot with solid lines only (no markers)
-        color = list(cfg.CHANNEL_COLORS.values())[idx % len(cfg.CHANNEL_COLORS)]
-        
-        # bias-corrected rms (solid line)
-        ax.plot(exposure_times, bias_corrected_precisions, 
-                linestyle='-', 
-                label=f"{config_name} (bias-corr rms)", 
-                linewidth=2, color=color)
-        
-        # minuit stat (dashed line)
-        ax.plot(exposure_times, minuit_precisions, 
-                linestyle='--',
-                label=f"{config_name} (minuit avg err)", 
-                linewidth=2, color=color)
-    
-    # formatting
-    signal_label = cfg.SIGNAL_LABELS.get(signal_channel, signal_channel)
-    ax.set_xlabel("sns years", fontsize=16)
-    ax.set_ylabel(f"statistical precision on {signal_label} (%)", fontsize=16)
-    ax.grid(True, alpha=0.3)
-    ax.legend(fontsize=9, ncol=2, loc='best')
-    ax.tick_params(labelsize=14)
-    
-    # set reasonable axis limits
-    ax.set_xlim(min(exposure_times) - 0.1, max(exposure_times) + 0.1)
-    
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=150)
-    print(f"saved precision curves ({detector_label}): {output_path}")
-    plt.close()
-
-def plot_bias_curves(all_results, output_path, detector_filter=None):
-    # filter results by detector type if specified
-    if detector_filter:
-        filtered_results = {k: v for k, v in all_results.items() 
-                           if k.startswith(detector_filter)}
-        if len(filtered_results) == 0:
-            print(f"warning: no results found for detector type '{detector_filter}'")
-            return
-        plot_results = filtered_results
-        detector_label = detector_filter.upper()
-    else:
-        plot_results = all_results
-        detector_label = "all detectors"
-    
-    if len(plot_results) == 0:
-        print("error: no results to plot!")
-        return
-    
-    # get signal channel and exposure times from first result
-    first_result = list(plot_results.values())[0]
-    signal_channel = first_result['signal_channel']
-    exposure_times = first_result['exposure_times']
-    fit_scenario = first_result['config']['fit_scenario']
-    fit_dimension = first_result['config']['fit_dimension']
-    
-    # create figure
-    fig, ax = plt.subplots(figsize=(14, 9))
-    
-    # plot each config
-    for idx, (config_name, result_data) in enumerate(sorted(plot_results.items())):
-        results = result_data['results']
-        
-        avg_bias_pct = []
-        
-        for years in exposure_times:
-            if years in results and len(results[years]) > 0:
-                # get errors and fitted values from valid fits
-                errors = [r['error'] for r in results[years] if r['valid']]
-                fitted_vals = [r['fitted'] for r in results[years] if r['valid']]
-                
-                if len(errors) > 0 and len(fitted_vals) > 0:
-                    # get true value
-                    true_val = results[years][0]['true_value']
-                    
-                    # calculate minuit statistical precision
-                    avg_error = np.mean(errors)
-                    avg_fitted = np.mean(fitted_vals)
-                    avg_bias_pct.append(100 * (avg_fitted - true_val))
-                    
-                else:
-                    avg_bias_pct.append(np.nan)
-            else:
-                avg_bias_pct.append(np.nan)
-        
-        # plot with solid lines only (no markers)
-        color = list(cfg.CHANNEL_COLORS.values())[idx % len(cfg.CHANNEL_COLORS)]
-        
-        # bias-corrected rms (solid line)
-        ax.plot(exposure_times, avg_bias_pct, 
-                linestyle='-', 
-                label=f"{config_name}", 
-                linewidth=2, color=color)
-    
-    # formatting
-    signal_label = cfg.SIGNAL_LABELS.get(signal_channel, signal_channel)
-    ax.set_xlabel("sns years", fontsize=16)
-    ax.set_ylabel(f"Avg Bias {signal_label} (%)", fontsize=16)
-    ax.grid(True, alpha=0.3)
-    ax.legend(fontsize=9, ncol=2, loc='best')
-    ax.tick_params(labelsize=14)
-    
-    # set reasonable axis limits
-    ax.set_xlim(min(exposure_times) - 0.1, max(exposure_times) + 0.1)
-    
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=150)
-    print(f"saved precision curves ({detector_label}): {output_path}")
-    plt.close()
-
-def create_comparison_table(all_results):
+    Parameters
+    ----------
+    all_results : dict
+        Results dict: {config_key: {year: [fit_results]}}
+    metadata : dict
+        Contains signal_channel and exposure_times
+    """
     if len(all_results) == 0:
         print("error: no results to summarize!")
         return
     
+    signal_channel = metadata['signal_channel']
+    exposure_times = metadata['exposure_times']
+    
     print("\n" + "="*140)
     print("summary table")
     print("="*140)
-    
-    # get exposure times from first result
-    first_result = list(all_results.values())[0]
-    exposure_times = first_result['exposure_times']
-    signal_channel = first_result['signal_channel']
     
     # print header
     print(f"{'config':<30} {'years':<8} {'minuit stat (%)':>18} {'avg bias':>15} {'bias-corr rms (%)':>20}")
@@ -250,18 +105,17 @@ def create_comparison_table(all_results):
     
     # print each config
     for config_name, result_data in sorted(all_results.items()):
-        results = result_data['results']
         
         for years in exposure_times:
-            if years in results and len(results[years]) > 0:
-                errors = [r['error'] for r in results[years] if r['valid']]
-                fitted_vals = [r['fitted'] for r in results[years] if r['valid']]
+            if years in result_data and len(result_data[years]) > 0:
+                errors = [r['error'] for r in result_data[years] if r['valid']]
+                fitted_vals = [r['fitted'] for r in result_data[years] if r['valid']]
                 
                 if len(errors) > 0 and len(fitted_vals) > 0:
                     # get metrics
                     avg_error = np.mean(errors)
                     avg_fitted = np.mean(fitted_vals)
-                    true_val = results[years][0]['true_value']
+                    true_val = result_data[years][0]['true_value']
                     
                     # calculate bias
                     bias = avg_fitted - true_val
@@ -297,30 +151,45 @@ if __name__ == "__main__":
     print(f"filter dimension: {FILTER_FIT_DIMENSION}")
     print()
     
-    # load all results
-    all_results = load_all_results(cfg.RESULTS_DIR, 
-                                    filter_scenario=FILTER_FIT_SCENARIO,
-                                    filter_dimension=FILTER_FIT_DIMENSION)
+    # load all results using standardized format
+    results_for_plotting, metadata = load_all_results(
+        cfg.RESULTS_DIR, 
+        filter_scenario=FILTER_FIT_SCENARIO,
+        filter_dimension=FILTER_FIT_DIMENSION
+    )
     
-    if len(all_results) == 0:
+    if len(results_for_plotting) == 0:
         print("\nno results found matching filters!")
         exit(1)
     
-    print(f"\nloaded {len(all_results)} configurations")
+    print(f"\nloaded {len(results_for_plotting)} configurations")
     
     # create summary table
-    create_comparison_table(all_results)
+    create_comparison_table(results_for_plotting, metadata)
     
-    output_path = cfg.HISTS_DIR / f'precision_curves_{cfg.FIT_SCENARIO}_{cfg.FIT_DIMENSION}.png'
+    # Use the SAME plotting functions as fit_all_configs.py
+    # This is the key change - now both paths use identical plotting code
+    print("\n" + "="*80)
+    print("generating plots using shared plotting functions")
+    print("="*80)
+    
+    output_path = cfg.HISTS_DIR / f'precision_curves_{metadata["fit_scenario"]}_{metadata["fit_dimension"]}.png'
     pu.plot_precision_curves(
-        all_results, cfg.EXPOSURE_TIMES, cfg.FIT_SCENARIO, cfg.FIT_DIMENSION, output_path
+        results_for_plotting, 
+        metadata['exposure_times'], 
+        metadata['signal_channel'],  # Pass actual signal_channel, not scenario
+        metadata['fit_dimension'], 
+        output_path
     )
 
-    output_path = cfg.HISTS_DIR / f'bias_curves_{cfg.FIT_SCENARIO}_{cfg.FIT_DIMENSION}.png'
+    output_path = cfg.HISTS_DIR / f'bias_curves_{metadata["fit_scenario"]}_{metadata["fit_dimension"]}.png'
     pu.plot_bias_curves(
-        all_results, cfg.EXPOSURE_TIMES, cfg.FIT_SCENARIO, cfg.FIT_DIMENSION, output_path
+        results_for_plotting, 
+        metadata['exposure_times'], 
+        metadata['signal_channel'],  # Pass actual signal_channel, not scenario
+        metadata['fit_dimension'], 
+        output_path
     )
-    
     
     print("\n" + "="*80)
     print("plotting complete")

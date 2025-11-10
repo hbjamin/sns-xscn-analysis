@@ -3,7 +3,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=500mb
-#SBATCH --time=00:05:00
+##SBATCH --time=00:05:00
 #SBATCH --output=submit_jobs_%j.log
 #SBATCH --partition=ubuntu_short
 
@@ -35,6 +35,12 @@ CONFIGS=(
     "water 1ft 100"
     "water 3ft 10"
     "water 3ft 100"
+    "1wbls 0ft 10"
+    "1wbls 0ft 100"
+    "1wbls 1ft 10"
+    "1wbls 1ft 100"
+    "1wbls 3ft 10"
+    "1wbls 3ft 100"
 )
 
 # Fit scenarios to run

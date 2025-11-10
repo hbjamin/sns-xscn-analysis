@@ -170,7 +170,7 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
                 if toy_idx == 0:
                     print(f"\nexample fit result:")
                     for ch in channels:
-                        print(f"  {ch}: {m.values[ch]:.1f} ± {m.errors[ch]:.1f}")
+                        print(f"  {ch}: {m.values[ch]:.1f} Â± {m.errors[ch]:.1f}")
             except Exception as e:
                 print(f"  error: fit {toy_idx+1} failed: {e}")
                 continue
@@ -262,6 +262,7 @@ if __name__ == "__main__":
     
     # process all configurations
     all_results_by_config = {}
+    stored_signal_channel = None  # Store signal_channel from first config
     
     for detector_name, shielding, neutrons_per_mw in cfg.CONFIGS:
         # load channels once per detector type
@@ -290,21 +291,26 @@ if __name__ == "__main__":
         if results is not None:
             config_key = f"{detector_name}_{shielding}_{neutrons_per_mw}npmw"
             all_results_by_config[config_key] = results
+            
+            # Store signal_channel from first successful config
+            if stored_signal_channel is None:
+                stored_signal_channel = signal_channel
     
-    # plot precision and bias  curves
+    # plot precision and bias curves
     if len(all_results_by_config) > 0:
         print("\n" + "="*80)
         print("plotting precision and bias curves")
         print("="*80)
         
+        # Use stored_signal_channel instead of cfg.FIT_SCENARIO
         output_path = cfg.HISTS_DIR / f'precision_curves_{cfg.FIT_SCENARIO}_{cfg.FIT_DIMENSION}.png'
         pu.plot_precision_curves(
-            all_results_by_config, cfg.EXPOSURE_TIMES, cfg.FIT_SCENARIO, cfg.FIT_DIMENSION, output_path
+            all_results_by_config, cfg.EXPOSURE_TIMES, stored_signal_channel, cfg.FIT_DIMENSION, output_path
         )
 
         output_path = cfg.HISTS_DIR / f'bias_curves_{cfg.FIT_SCENARIO}_{cfg.FIT_DIMENSION}.png'
         pu.plot_bias_curves(
-            all_results_by_config, cfg.EXPOSURE_TIMES, cfg.FIT_SCENARIO, cfg.FIT_DIMENSION, output_path
+            all_results_by_config, cfg.EXPOSURE_TIMES, stored_signal_channel, cfg.FIT_DIMENSION, output_path
         )
     
     print("\n" + "=" * 80)

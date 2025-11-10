@@ -246,8 +246,6 @@ def plot_bias_curves(all_results, exposure_times, signal_channel,
     if len(all_results) == 0:
         print("error: no results to plot!")
         return
-
-    print(all_results)
     
     fig, ax = plt.subplots(figsize=(14, 9))
     

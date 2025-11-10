@@ -10,7 +10,7 @@ PROJECT_ROOT = Path(__file__).parent.absolute()
 
 # data paths (relative to project root)
 DATA_ROOT = PROJECT_ROOT.parent.parent / "sim"
-PREPROCESSED_DIR = DATA_ROOT / "preprocessed_data"
+PREPROCESSED_DIR = DATA_ROOT / "preprocessed_data_merged"
 NEUTRON_SPECTRUM_FILE = DATA_ROOT / "outputs" / "sns" / "neutrons" / "neutron_spectra.dat"
 
 # output paths (within project)
@@ -31,9 +31,10 @@ ENERGY_MIN = 0.0
 ENERGY_MAX = 75.0
 
 # binning
-# ENERGY_BINS = np.arange(ENERGY_MIN, ENERGY_MAX + 1.25, 1.25)
-ENERGY_BINS = np.arange(ENERGY_MIN, ENERGY_MAX + 5, 5)
-DIRECTION_BINS = np.linspace(-1, 1, 16)
+ENERGY_BINS = np.arange(ENERGY_MIN, ENERGY_MAX + 1.25, 1.25)
+#ENERGY_BINS = np.arange(ENERGY_MIN, ENERGY_MAX + 5, 5)
+#DIRECTION_BINS = np.linspace(-1, 1, 16)
+DIRECTION_BINS = np.linspace(-1, 1, 51)
 
 FIT_SCENARIO = "oxygen" # oxygen/gallium
 FIT_DIMENSION = "2D" # 1D/2D
@@ -73,10 +74,16 @@ CONFIGS = [
     ('water', '1ft', 100),
     ('water', '3ft', 10),
     ('water', '3ft', 100),
+    ('1wbls', '0ft', 10),
+    ('1wbls', '0ft', 100),
+    ('1wbls', '1ft', 10),
+    ('1wbls', '1ft', 100),
+    ('1wbls', '3ft', 10),
+    ('1wbls', '3ft', 100),
 ]
 
 # number of toy datasets
-N_TOYS = 2 # increase for production (e.g. 1000)
+N_TOYS = 10 # increase for production (e.g. 1000)
 
 # exposure times to analyze (years)
 EXPOSURE_TIMES = [0.5, 1.0, 2.0, 3.0]
@@ -96,7 +103,7 @@ SMOOTH_ASIMOV = {
     'channels': ['neutrons', 'cosmics'],  # which ASIMOV histograms to smooth
     'method': 'gaussian',  # 'gaussian' (best for 1D & 2D), 'kde', 'spline', 'savgol', 'exponential' (1D only)
     'params': {
-        'gaussian': {'sigma': 0.5},  # NEW: Recommended method - works for 1D and 2D!
+        'gaussian': {'sigma': 0.2},  # NEW: Recommended method - works for 1D and 2D!
         'spline': {'smoothness': 1},
         'kde': {'bandwidth': 'scott'},
         'savgol': {'window': 11, 'polyorder': 3},
