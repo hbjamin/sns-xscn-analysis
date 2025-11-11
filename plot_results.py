@@ -173,6 +173,49 @@ if __name__ == "__main__":
     print("generating plots using shared plotting functions")
     print("="*80)
     
+    # Generate bias distribution plots for each configuration
+    print("\nGenerating bias distribution plots:")
+    for config_name, result_data in results_for_plotting.items():
+        output_path = cfg.HISTS_DIR / f'bias_distributions_{config_name}_{metadata["fit_scenario"]}_{metadata["fit_dimension"]}.png'
+        pu.plot_bias_distributions(
+            result_data,
+            metadata['exposure_times'],
+            config_name,
+            metadata['signal_channel'],
+            metadata['fit_scenario'],
+            metadata['fit_dimension'],
+            output_path
+        )
+    
+    # Create separate plots for each detector type
+    for detector in ['water', '1wbls']:
+        print(f"\nGenerating plots for {detector}:")
+        
+        # Precision curves
+        output_path = cfg.HISTS_DIR / f'precision_curves_{detector}_{metadata["fit_scenario"]}_{metadata["fit_dimension"]}.png'
+        pu.plot_precision_curves(
+            results_for_plotting, 
+            metadata['exposure_times'], 
+            metadata['signal_channel'],
+            metadata['fit_dimension'], 
+            output_path,
+            detector_filter=detector
+        )
+        
+        # Bias curves
+        output_path = cfg.HISTS_DIR / f'bias_curves_{detector}_{metadata["fit_scenario"]}_{metadata["fit_dimension"]}.png'
+        pu.plot_bias_curves(
+            results_for_plotting, 
+            metadata['exposure_times'], 
+            metadata['signal_channel'],
+            metadata['fit_dimension'], 
+            output_path,
+            detector_filter=detector
+        )
+    
+    # Also create combined plots (all detectors together) for backward compatibility
+    print(f"\nGenerating combined plots (all detectors):")
+    
     output_path = cfg.HISTS_DIR / f'precision_curves_{metadata["fit_scenario"]}_{metadata["fit_dimension"]}.png'
     pu.plot_precision_curves(
         results_for_plotting, 

@@ -2,6 +2,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+import pickle
 import gc
 
 import config as cfg
@@ -109,7 +110,7 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
         print(f"exposure: {years} years")
         print(f"{'='*60}")
         
-        # normalize and scale asimov (just for plotting)
+        # normalize and scale asimov
         asimov_normalized, asimov_scaled = au.normalize_and_scale_asimov(
             asimov_hist, years, filtered_rates
         )
@@ -118,12 +119,6 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
         norm_pdf_luts, pdfs, bin_centers = au.make_normalized_interpolated_pdf(
             asimov_normalized, cfg.FIT_DIMENSION 
         )
-        
-        # plot asimov projections (once per scenario)
-        if years == cfg.EXPOSURE_TIMES[0]:
-            output_path = (cfg.HISTS_DIR / 
-                          f'asimov_projections_{detector_name}_{neutrons_per_mw}npmw_{shielding}_{cfg.FIT_DIMENSION}.png')
-            pu.plot_asimov_projections(asimov_scaled, years, output_path, cfg.FIT_DIMENSION)
 
         # calculate total expected events
         total_events = sum(filtered_rates[ch] for ch in filtered_rates.keys())
@@ -132,7 +127,6 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
         # sample from toy pool (separate from asimov data!)
         print(f"\ngenerating and fitting {cfg.N_TOYS} toy datasets...")
         fit_results = []
-        last_toy_hist = None
         
         for toy_idx in range(cfg.N_TOYS):
             # generate one toy dataset from toy pool
@@ -170,14 +164,10 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
                 if toy_idx == 0:
                     print(f"\nexample fit result:")
                     for ch in channels:
-                        print(f"  {ch}: {m.values[ch]:.1f} Â± {m.errors[ch]:.1f}")
+                        print(f"  {ch}: {m.values[ch]:.1f} Ã‚Â± {m.errors[ch]:.1f}")
             except Exception as e:
                 print(f"  error: fit {toy_idx+1} failed: {e}")
                 continue
-            
-            # keep only the last toy histogram for plotting
-            if toy_idx == cfg.N_TOYS - 1:
-                last_toy_hist = toy_hist.copy()
             
             # free memory
             del toy_datasets
@@ -193,15 +183,6 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
                 print(f"  progress: {toy_idx + 1}/{cfg.N_TOYS} toys completed...")
         
         print(f"  finished fitting all {cfg.N_TOYS} toys!")
-        
-        # plot asimov + last toy overlaid
-        if last_toy_hist is not None:
-            output_path = (cfg.HISTS_DIR / 
-                          f'asimov_toys_{detector_name}_{neutrons_per_mw}npmw_{shielding}_{years}yr_{cfg.FIT_DIMENSION}.png')
-            pu.plot_asimov_and_fit_group_projections(
-                asimov_scaled, [last_toy_hist], years, output_path, cfg.FIT_DIMENSION, n_toys_to_plot=1
-            )
-            del last_toy_hist
         
         # store results
         if len(fit_results) == 0:
@@ -296,23 +277,48 @@ if __name__ == "__main__":
             if stored_signal_channel is None:
                 stored_signal_channel = signal_channel
     
-    # plot precision and bias curves
+    # Save results to pickle files
     if len(all_results_by_config) > 0:
         print("\n" + "="*80)
-        print("plotting precision and bias curves")
+        print("saving results to pickle files")
         print("="*80)
         
-        # Use stored_signal_channel instead of cfg.FIT_SCENARIO
-        output_path = cfg.HISTS_DIR / f'precision_curves_{cfg.FIT_SCENARIO}_{cfg.FIT_DIMENSION}.png'
-        pu.plot_precision_curves(
-            all_results_by_config, cfg.EXPOSURE_TIMES, stored_signal_channel, cfg.FIT_DIMENSION, output_path
-        )
-
-        output_path = cfg.HISTS_DIR / f'bias_curves_{cfg.FIT_SCENARIO}_{cfg.FIT_DIMENSION}.png'
-        pu.plot_bias_curves(
-            all_results_by_config, cfg.EXPOSURE_TIMES, stored_signal_channel, cfg.FIT_DIMENSION, output_path
-        )
+        # Save each configuration to its own pickle file (matching fit_single_config format)
+        for config_key, results in all_results_by_config.items():
+            # Parse config_key to get components
+            parts = config_key.rsplit('_', 1)  # Split on last underscore to get npmw
+            detector_shielding = parts[0]  # e.g., "water_0ft"
+            npmw_str = parts[1]  # e.g., "10npmw"
+            
+            detector, shielding = detector_shielding.rsplit('_', 1)
+            neutrons_per_mw = int(npmw_str.replace('npmw', ''))
+            
+            # Create output data matching fit_single_config format
+            output_data = {
+                'config': {
+                    'detector': detector,
+                    'shielding': shielding,
+                    'neutrons_per_mw': neutrons_per_mw,
+                    'fit_scenario': cfg.FIT_SCENARIO,
+                    'fit_dimension': cfg.FIT_DIMENSION
+                },
+                'signal_channel': stored_signal_channel,
+                'exposure_times': cfg.EXPOSURE_TIMES,
+                'results': results
+            }
+            
+            # Save to pickle with same naming convention as fit_single_config
+            config_id = f"{detector}_{shielding}_{neutrons_per_mw}npmw_{cfg.FIT_SCENARIO}_{cfg.FIT_DIMENSION}"
+            output_file = cfg.RESULTS_DIR / f"results_{config_id}.pkl"
+            
+            with open(output_file, 'wb') as f:
+                pickle.dump(output_data, f)
+            
+            print(f"  saved: {output_file.name}")
     
     print("\n" + "=" * 80)
     print("analysis complete")
     print("=" * 80)
+    print(f"\nResults saved to: {cfg.RESULTS_DIR}")
+    print(f"\nTo generate all plots, run:")
+    print(f"  python plot_results.py")

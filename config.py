@@ -31,10 +31,10 @@ ENERGY_MIN = 0.0
 ENERGY_MAX = 75.0
 
 # binning
-ENERGY_BINS = np.arange(ENERGY_MIN, ENERGY_MAX + 1.25, 1.25)
-#ENERGY_BINS = np.arange(ENERGY_MIN, ENERGY_MAX + 5, 5)
-#DIRECTION_BINS = np.linspace(-1, 1, 16)
-DIRECTION_BINS = np.linspace(-1, 1, 51)
+#ENERGY_BINS = np.arange(ENERGY_MIN, ENERGY_MAX + 1.25, 1.25)
+ENERGY_BINS = np.arange(ENERGY_MIN, ENERGY_MAX + 5, 5)
+DIRECTION_BINS = np.linspace(-1, 1, 16)
+#DIRECTION_BINS = np.linspace(-1, 1, 51)
 
 FIT_SCENARIO = "oxygen" # oxygen/gallium
 FIT_DIMENSION = "2D" # 1D/2D
@@ -68,16 +68,24 @@ EVENT_RATES_TOTAL = EVENT_RATES_TOTAL_NO_GA.copy()
 
 # detector configurations: (detector, shielding, neutrons_per_mw)
 CONFIGS = [
+    ('water', '0ft', 0),
+    ('water', '0ft', 1),
     ('water', '0ft', 10),
     ('water', '0ft', 100),
+    ('water', '1ft', 1),
     ('water', '1ft', 10),
     ('water', '1ft', 100),
+    ('water', '3ft', 1),
     ('water', '3ft', 10),
     ('water', '3ft', 100),
+    ('1wbls', '0ft', 0),
+    ('1wbls', '0ft', 1),
     ('1wbls', '0ft', 10),
     ('1wbls', '0ft', 100),
+    ('1wbls', '1ft', 1),
     ('1wbls', '1ft', 10),
     ('1wbls', '1ft', 100),
+    ('1wbls', '3ft', 1),
     ('1wbls', '3ft', 10),
     ('1wbls', '3ft', 100),
 ]

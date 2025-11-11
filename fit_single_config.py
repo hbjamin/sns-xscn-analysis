@@ -120,12 +120,6 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
             asimov_normalized, fit_dimension
         )
         
-        # plot asimov projections (once per scenario)
-        if years == cfg.EXPOSURE_TIMES[0]:
-            output_path = (cfg.HISTS_DIR / 
-                          f'asimov_projections_{detector_name}_{neutrons_per_mw}npmw_{shielding}_{fit_dimension}.png')
-            pu.plot_asimov_projections(asimov_scaled, years, output_path, fit_dimension)
-        
         # calculate total expected events
         total_events = sum(filtered_rates[ch] for ch in filtered_rates.keys())
         
@@ -133,7 +127,6 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
         # sample from toy pool (separate from asimov!)
         print(f"\ngenerating and fitting {cfg.N_TOYS} toy datasets...")
         fit_results = []
-        last_toy_hist = None
         
         for toy_idx in range(cfg.N_TOYS):
             # generate one toy dataset from toy pool
@@ -171,14 +164,10 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
                 if toy_idx == 0:
                     print(f"\nexample fit result:")
                     for ch in channels:
-                        print(f"  {ch}: {m.values[ch]:.1f} ± {m.errors[ch]:.1f}")
+                        print(f"  {ch}: {m.values[ch]:.1f} Â± {m.errors[ch]:.1f}")
             except Exception as e:
                 print(f"  error: fit {toy_idx+1} failed: {e}")
                 continue
-            
-            # keep only the last toy histogram for plotting
-            if toy_idx == cfg.N_TOYS - 1:
-                last_toy_hist = toy_hist.copy()
             
             # free memory
             del toy_datasets
@@ -194,15 +183,6 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
                 print(f"  progress: {toy_idx + 1}/{cfg.N_TOYS} toys completed...")
         
         print(f"  finished fitting all {cfg.N_TOYS} toys!")
-        
-        # plot asimov + last toy overlaid
-        if last_toy_hist is not None:
-            output_path = (cfg.HISTS_DIR / 
-                          f'asimov_toys_{detector_name}_{neutrons_per_mw}npmw_{shielding}_{years}yr_{fit_dimension}.png')
-            pu.plot_asimov_and_fit_group_projections(
-                asimov_scaled, [last_toy_hist], years, output_path, fit_dimension, n_toys_to_plot=1
-            )
-            del last_toy_hist
         
         # store results
         if len(fit_results) == 0:
@@ -322,6 +302,8 @@ if __name__ == "__main__":
         print("analysis complete")
         print(f"results saved to: {output_file}")
         print("=" * 80)
+        print(f"\nTo generate all plots, run:")
+        print(f"  python plot_results.py")
     else:
         print("\n" + "=" * 80)
         print("analysis failed - no results to save")

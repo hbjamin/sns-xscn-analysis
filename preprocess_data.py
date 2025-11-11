@@ -95,8 +95,8 @@ def preprocess_channel(file_pattern, alpha, output_path, reverseXdir=False):
             fitu = tree['u_fitdirectioncenter_0p5_quad'].array(library='np')
             nhit = tree['digitNhits'].array(library='np')  # MUCH FASTER than digitCharge!
             mcke = tree['mcke'].array(library='np') # only use this for neutrons
-            tcharge = ak.sum(ak.Array(tree['digitCharge'].array(library='ak')), axis=1)
-            tcharge = ak.to_numpy(tcharge)
+            # Optimized: direct conversion without intermediate ak.Array() call
+            tcharge = ak.to_numpy(ak.sum(tree['digitCharge'].array(library='ak'), axis=1))
             
             total_nsim += len(nhit)
             
@@ -144,7 +144,7 @@ def preprocess_channel(file_pattern, alpha, output_path, reverseXdir=False):
     elapsed = (datetime.now() - start_time).total_seconds()
     file_size_mb = output_path.stat().st_size / 1e6
     
-    print(f"  ✓ Saved {ntrig:,} events to {output_path}")
+    print(f"    Saved {ntrig:,} events to {output_path}")
     print(f"    File size: {file_size_mb:.1f} MB")
     print(f"    Processing time: {elapsed:.1f} seconds")
     print(f"    Efficiency: {ntrig}/{nsim} = {100*ntrig/nsim:.1f}%")

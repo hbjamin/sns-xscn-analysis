@@ -150,7 +150,7 @@ def plot_asimov_and_fit_group_projections(asimov_hist, fitgroups_hist, years, ou
     plt.close()
 
 def plot_precision_curves(all_results, exposure_times, signal_channel,
-                         fit_dimension, output_path):
+                         fit_dimension, output_path, detector_filter=None):
     """
     Plot precision curves showing statistical uncertainty vs exposure time.
     
@@ -168,15 +168,26 @@ def plot_precision_curves(all_results, exposure_times, signal_channel,
         Fit dimension ('1D' or '2D')
     output_path : Path
         Where to save the plot
+    detector_filter : str, optional
+        If provided, only plot configs starting with this detector name (e.g., 'water', '1wbls')
     """
     if len(all_results) == 0:
         print("error: no results to plot!")
         return
     
+    # Filter results by detector if requested
+    if detector_filter is not None:
+        filtered_results = {k: v for k, v in all_results.items() if k.startswith(detector_filter)}
+        if len(filtered_results) == 0:
+            print(f"warning: no results found for detector '{detector_filter}'")
+            return
+    else:
+        filtered_results = all_results
+    
     fig, ax = plt.subplots(figsize=(14, 9))
     
     # plot each config
-    for idx, (config_name, result_data) in enumerate(sorted(all_results.items())):
+    for idx, (config_name, result_data) in enumerate(sorted(filtered_results.items())):
         
         minuit_precisions = []
         bias_corrected_precisions = []
@@ -238,19 +249,43 @@ def plot_precision_curves(all_results, exposure_times, signal_channel,
     plt.close()
 
 def plot_bias_curves(all_results, exposure_times, signal_channel,
-                         fit_dimension, output_path):
+                         fit_dimension, output_path, detector_filter=None):
     """
-    Plot bias curves for exposure time
+    Plot bias curves for exposure time.
+    
+    Parameters
+    ----------
+    all_results : dict
+        Results dictionary by configuration
+    exposure_times : list
+        Exposure times to plot
+    signal_channel : str
+        Signal channel name
+    fit_dimension : str
+        Fit dimension ('1D' or '2D')
+    output_path : Path
+        Where to save the plot
+    detector_filter : str, optional
+        If provided, only plot configs starting with this detector name (e.g., 'water', '1wbls')
     """
     
     if len(all_results) == 0:
         print("error: no results to plot!")
         return
     
+    # Filter results by detector if requested
+    if detector_filter is not None:
+        filtered_results = {k: v for k, v in all_results.items() if k.startswith(detector_filter)}
+        if len(filtered_results) == 0:
+            print(f"warning: no results found for detector '{detector_filter}'")
+            return
+    else:
+        filtered_results = all_results
+    
     fig, ax = plt.subplots(figsize=(14, 9))
     
     # plot each config
-    for idx, (config_name, result_data) in enumerate(sorted(all_results.items())):
+    for idx, (config_name, result_data) in enumerate(sorted(filtered_results.items())):
         
         avg_bias_percentage = []
         
@@ -294,4 +329,90 @@ def plot_bias_curves(all_results, exposure_times, signal_channel,
     plt.tight_layout()
     plt.savefig(output_path, dpi=150)
     print(f"saved precision curves: {output_path}")
+    plt.close()
+
+def plot_bias_distributions(result_data, exposure_times, config_name, signal_channel, 
+                            fit_scenario, fit_dimension, output_path):
+    """
+    Plot histograms of bias distributions for each exposure time.
+    Shows how the fitted values are distributed around the true value.
+    
+    Parameters
+    ----------
+    result_data : dict
+        Results dictionary for a single configuration: {year: [fit_results]}
+    exposure_times : list
+        List of exposure times to plot
+    config_name : str
+        Configuration name (e.g., 'water_0ft_10npmw')
+    signal_channel : str
+        Signal channel name (e.g., 'nO16')
+    fit_scenario : str
+        Fit scenario ('oxygen' or 'gallium')
+    fit_dimension : str
+        Fit dimension ('1D' or '2D')
+    output_path : Path
+        Where to save the plot
+    """
+    if len(result_data) == 0:
+        print(f"  warning: no results to plot for {config_name}")
+        return
+    
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # colors for different exposure times
+    colors = plt.cm.viridis(np.linspace(0.2, 0.9, len(exposure_times)))
+    
+    # determine reasonable bin range based on all data
+    all_biases = []
+    for years in exposure_times:
+        if years in result_data and len(result_data[years]) > 0:
+            fitted_vals = [r['fitted'] for r in result_data[years] if r['valid']]
+            if len(fitted_vals) > 0:
+                true_val = result_data[years][0]['true_value']
+                biases = [v - true_val for v in fitted_vals]
+                all_biases.extend(biases)
+    
+    if len(all_biases) == 0:
+        print(f"  warning: no valid biases to plot for {config_name}")
+        return
+    
+    # set bin range to capture most data (with some padding)
+    bias_range = (np.percentile(all_biases, 1), np.percentile(all_biases, 99))
+    bin_padding = (bias_range[1] - bias_range[0]) * 0.1
+    bins = np.linspace(bias_range[0] - bin_padding, bias_range[1] + bin_padding, 30)
+    
+    # plot histogram for each exposure time
+    for idx, years in enumerate(exposure_times):
+        if years in result_data and len(result_data[years]) > 0:
+            fitted_vals = [r['fitted'] for r in result_data[years] if r['valid']]
+            
+            if len(fitted_vals) > 0:
+                true_val = result_data[years][0]['true_value']
+                biases = [v - true_val for v in fitted_vals]
+                
+                # calculate statistics for legend
+                mean_bias = np.mean(biases)
+                std_bias = np.std(biases)
+                
+                # plot histogram
+                ax.hist(biases, bins=bins, alpha=0.6, 
+                       label=f'{years:.1f} yr (μ={mean_bias:.1f}, σ={std_bias:.1f})',
+                       color=colors[idx], edgecolor='black', linewidth=0.5)
+    
+    # add vertical line at zero bias
+    ax.axvline(0, color='red', linestyle='--', linewidth=2, label='Zero bias', alpha=0.7)
+    
+    # formatting
+    signal_label = cfg.SIGNAL_LABELS.get(signal_channel, signal_channel)
+    ax.set_xlabel(f'Bias on {signal_label} (fitted - true) [events]', fontsize=14)
+    ax.set_ylabel('Number of toy experiments', fontsize=14)
+    ax.set_title(f'Bias Distributions: {config_name}', fontsize=16)
+    ax.legend(fontsize=11, loc='best')
+    ax.grid(True, alpha=0.3, axis='y')
+    ax.tick_params(labelsize=12)
+    
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150)
+    print(f"  saved bias distributions: {output_path.name}")
     plt.close()
