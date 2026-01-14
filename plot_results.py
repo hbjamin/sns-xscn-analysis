@@ -23,6 +23,8 @@ def load_all_results(results_dir, filter_scenario=None, filter_dimension=None):
     -------
     results_for_plotting : dict
         Results in format: {config_key: {year: [fit_results]}}
+    histogram_data : dict
+        Histogram data: {config_key: {'asimov_hist': ..., 'filtered_rates': ...}}
     metadata : dict
         Metadata from results: signal_channel, exposure_times, fit_scenario, fit_dimension
     """
@@ -30,11 +32,12 @@ def load_all_results(results_dir, filter_scenario=None, filter_dimension=None):
     
     if len(result_files) == 0:
         print(f"error: no result files found in {results_dir}")
-        return {}, {}
+        return {}, {}, {}
     
     print(f"found {len(result_files)} result files")
     
     results_for_plotting = {}
+    histogram_data = {}
     metadata = {
         'signal_channel': None,
         'exposure_times': None,
@@ -58,9 +61,15 @@ def load_all_results(results_dir, filter_scenario=None, filter_dimension=None):
             # create config key
             config_key = f"{config['detector']}_{config['shielding']}_{config['neutrons_per_mw']}npmw"
             
-            # Extract just the results dict (not the wrapper)
-            # This matches the format used by fit_all_configs.py
+            # Extract fit results
             results_for_plotting[config_key] = data['results']
+            
+            # Extract histogram data (if available - for backward compatibility with old pickle files)
+            if 'asimov_hist' in data and 'filtered_rates' in data:
+                histogram_data[config_key] = {
+                    'asimov_hist': data['asimov_hist'],
+                    'filtered_rates': data['filtered_rates']
+                }
             
             # Store metadata from first file
             if metadata['signal_channel'] is None:
@@ -75,7 +84,7 @@ def load_all_results(results_dir, filter_scenario=None, filter_dimension=None):
             print(f"  error loading {result_file}: {e}")
             continue
     
-    return results_for_plotting, metadata
+    return results_for_plotting, histogram_data, metadata
 
 def create_comparison_table(all_results, metadata):
     """
@@ -152,7 +161,7 @@ if __name__ == "__main__":
     print()
     
     # load all results using standardized format
-    results_for_plotting, metadata = load_all_results(
+    results_for_plotting, histogram_data, metadata = load_all_results(
         cfg.RESULTS_DIR, 
         filter_scenario=FILTER_FIT_SCENARIO,
         filter_dimension=FILTER_FIT_DIMENSION
@@ -163,6 +172,11 @@ if __name__ == "__main__":
         exit(1)
     
     print(f"\nloaded {len(results_for_plotting)} configurations")
+    
+    if len(histogram_data) > 0:
+        print(f"loaded histogram data for {len(histogram_data)} configurations (peak bin precision available)")
+    else:
+        print("warning: no histogram data found (regenerate pickle files to enable peak bin precision plots)")
     
     # create summary table
     create_comparison_table(results_for_plotting, metadata)
@@ -201,7 +215,7 @@ if __name__ == "__main__":
             output_path,
             detector_filter=detector
         )
-        
+
         # Bias curves
         output_path = cfg.HISTS_DIR / f'bias_curves_{detector}_{metadata["fit_scenario"]}_{metadata["fit_dimension"]}.png'
         pu.plot_bias_curves(
@@ -233,7 +247,67 @@ if __name__ == "__main__":
         metadata['fit_dimension'], 
         output_path
     )
-    
+   
+   # Generate peak bin precision plots (sanity check: sqrt(S+B)/S)
+    if len(histogram_data) > 0:
+        print(f"\nGenerating peak bin precision plots (simple Poisson statistics):")
+
+        # Generate 1D energy peak bin plots (always project to energy)
+        print(f"  1D Energy peak bin:")
+        for detector in ['water', '1wbls']:
+            output_path = cfg.HISTS_DIR / f'peak_bin_precision_1d_{detector}_{metadata["fit_scenario"]}_{metadata["fit_dimension"]}.png'
+            pu.plot_peak_bin_precision(
+                histogram_data,
+                metadata['exposure_times'],
+                metadata['signal_channel'],
+                metadata['fit_scenario'],
+                metadata['fit_dimension'],
+                output_path,
+                detector_filter=detector,
+                use_1d_energy=True
+            )
+
+        # Combined 1D plot
+        output_path = cfg.HISTS_DIR / f'peak_bin_precision_1d_{metadata["fit_scenario"]}_{metadata["fit_dimension"]}.png'
+        pu.plot_peak_bin_precision(
+            histogram_data,
+            metadata['exposure_times'],
+            metadata['signal_channel'],
+            metadata['fit_scenario'],
+            metadata['fit_dimension'],
+            output_path,
+            use_1d_energy=True
+        )
+
+        # Generate native dimensionality peak bin plots (use 2D if fit is 2D)
+        if metadata['fit_dimension'] == '2D':
+            print(f"  2D (energy×direction) peak bin:")
+            for detector in ['water', '1wbls']:
+                output_path = cfg.HISTS_DIR / f'peak_bin_precision_2d_{detector}_{metadata["fit_scenario"]}_{metadata["fit_dimension"]}.png'
+                pu.plot_peak_bin_precision(
+                    histogram_data,
+                    metadata['exposure_times'],
+                    metadata['signal_channel'],
+                    metadata['fit_scenario'],
+                    metadata['fit_dimension'],
+                    output_path,
+                    detector_filter=detector,
+                    use_1d_energy=False
+                )
+
+            # Combined 2D plot
+            output_path = cfg.HISTS_DIR / f'peak_bin_precision_2d_{metadata["fit_scenario"]}_{metadata["fit_dimension"]}.png'
+            pu.plot_peak_bin_precision(
+                histogram_data,
+                metadata['exposure_times'],
+                metadata['signal_channel'],
+                metadata['fit_scenario'],
+                metadata['fit_dimension'],
+                output_path,
+                use_1d_energy=False
+            )
+
     print("\n" + "="*80)
     print("plotting complete")
     print("=" * 80)
+

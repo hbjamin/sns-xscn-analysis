@@ -218,7 +218,8 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
             print(f"  bias (mean - true): {bias:.1f}")
             print(f"  bias-corrected rms: {corrected_rms:.1f} ({100*corrected_rms/true_val:.2f}%)")
     
-    return all_results, signal_channel
+    # Return results along with asimov histogram data for peak bin calculations
+    return all_results, signal_channel, asimov_hist, filtered_rates
 
 if __name__ == "__main__":
     
@@ -272,7 +273,7 @@ if __name__ == "__main__":
             continue
     
     # run analysis
-    results, signal_channel = run_scenario_analysis(
+    results, signal_channel, asimov_hist, filtered_rates = run_scenario_analysis(
         channel_cache, SHIELDING, NEUTRONS_PER_MW, DETECTOR_NAME,
         FIT_SCENARIO, FIT_DIMENSION
     )
@@ -292,7 +293,9 @@ if __name__ == "__main__":
             },
             'signal_channel': signal_channel,
             'exposure_times': cfg.EXPOSURE_TIMES,
-            'results': results
+            'results': results,
+            'asimov_hist': asimov_hist,
+            'filtered_rates': filtered_rates
         }
         
         with open(output_file, 'wb') as f:

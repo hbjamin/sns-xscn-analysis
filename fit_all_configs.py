@@ -120,6 +120,12 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
             asimov_normalized, cfg.FIT_DIMENSION 
         )
 
+        # plot asimov projections (once per scenario)
+        if years == cfg.EXPOSURE_TIMES[0]:
+            output_path = (cfg.HISTS_DIR / 
+                          f'asimov_projections_{detector_name}_{neutrons_per_mw}npmw_{shielding}_{cfg.FIT_DIMENSION}.png')
+            pu.plot_asimov_projections(asimov_scaled, years, output_path, cfg.FIT_DIMENSION)
+
         # calculate total expected events
         total_events = sum(filtered_rates[ch] for ch in filtered_rates.keys())
         
@@ -168,7 +174,11 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
             except Exception as e:
                 print(f"  error: fit {toy_idx+1} failed: {e}")
                 continue
-            
+
+            # keep only the last toy histogram for plotting
+            if toy_idx == cfg.N_TOYS - 1:
+                last_toy_hist = toy_hist.copy()            
+
             # free memory
             del toy_datasets
             del toy_hist
@@ -183,6 +193,15 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
                 print(f"  progress: {toy_idx + 1}/{cfg.N_TOYS} toys completed...")
         
         print(f"  finished fitting all {cfg.N_TOYS} toys!")
+
+        # plot asimov + last toy overlaid
+        if last_toy_hist is not None:
+            output_path = (cfg.HISTS_DIR / 
+                          f'asimov_toys_{detector_name}_{neutrons_per_mw}npmw_{shielding}_{years}yr_{cfg.FIT_DIMENSION}.png')
+            pu.plot_asimov_and_fit_group_projections(
+                asimov_scaled, [last_toy_hist], years, output_path, cfg.FIT_DIMENSION, n_toys_to_plot=1
+            )
+            del last_toy_hist
         
         # store results
         if len(fit_results) == 0:
@@ -218,7 +237,10 @@ def run_scenario_analysis(channel_cache, shielding, neutrons_per_mw, detector_na
             print(f"  bias (mean - true): {bias:.1f}")
             print(f"  bias-corrected rms: {corrected_rms:.1f} ({100*corrected_rms/true_val:.2f}%)")
     
-    return all_results, signal_channel
+    # Return results along with asimov histogram data for peak bin calculations
+    # We return asimov_hist (not normalized) and filtered_rates so we can recreate 
+    # the scaled histograms for any exposure time in the plotting script
+    return all_results, signal_channel, asimov_hist, filtered_rates
 
 if __name__ == "__main__":
     
@@ -264,35 +286,39 @@ if __name__ == "__main__":
                 continue
         
         # run analysis
-        results, signal_channel = run_scenario_analysis(
+        results, signal_channel, asimov_hist, filtered_rates = run_scenario_analysis(
             channel_cache, shielding, neutrons_per_mw, detector_name,
             cfg.FIT_SCENARIO, cfg.FIT_DIMENSION
         )
-        
+
         if results is not None:
             config_key = f"{detector_name}_{shielding}_{neutrons_per_mw}npmw"
-            all_results_by_config[config_key] = results
-            
+            all_results_by_config[config_key] = {
+                'results': results,
+                'asimov_hist': asimov_hist,
+                'filtered_rates': filtered_rates
+            }
+
             # Store signal_channel from first successful config
             if stored_signal_channel is None:
                 stored_signal_channel = signal_channel
-    
+        
     # Save results to pickle files
     if len(all_results_by_config) > 0:
         print("\n" + "="*80)
         print("saving results to pickle files")
         print("="*80)
-        
+
         # Save each configuration to its own pickle file (matching fit_single_config format)
-        for config_key, results in all_results_by_config.items():
+        for config_key, config_data in all_results_by_config.items():
             # Parse config_key to get components
             parts = config_key.rsplit('_', 1)  # Split on last underscore to get npmw
             detector_shielding = parts[0]  # e.g., "water_0ft"
             npmw_str = parts[1]  # e.g., "10npmw"
-            
+
             detector, shielding = detector_shielding.rsplit('_', 1)
             neutrons_per_mw = int(npmw_str.replace('npmw', ''))
-            
+
             # Create output data matching fit_single_config format
             output_data = {
                 'config': {
@@ -304,7 +330,9 @@ if __name__ == "__main__":
                 },
                 'signal_channel': stored_signal_channel,
                 'exposure_times': cfg.EXPOSURE_TIMES,
-                'results': results
+                'results': config_data['results'],
+                'asimov_hist': config_data['asimov_hist'],
+                'filtered_rates': config_data['filtered_rates']
             }
             
             # Save to pickle with same naming convention as fit_single_config

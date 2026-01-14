@@ -7,8 +7,6 @@
 #SBATCH --output=submit_jobs_%j.log
 #SBATCH --partition=ubuntu_short
 
-# CRITICAL: Set the actual project directory
-# Replace this with your actual path
 PROJECT_DIR="/nfs/disk1/users/bharris/eos/analysis/sns-xscn-analysis"
 
 # Change to project directory
@@ -29,16 +27,24 @@ echo ""
 # Define all configurations
 # format: detector shielding neutrons_per_mw
 CONFIGS=(
+    "water 0ft 0"
+    "water 0ft 1"
     "water 0ft 10"
     "water 0ft 100"
+    "water 1ft 1"
     "water 1ft 10"
     "water 1ft 100"
+    "water 3ft 1"
     "water 3ft 10"
     "water 3ft 100"
+    "1wbls 0ft 0"
+    "1wbls 0ft 1"
     "1wbls 0ft 10"
     "1wbls 0ft 100"
+    "1wbls 1ft 1"
     "1wbls 1ft 10"
     "1wbls 1ft 100"
+    "1wbls 3ft 1"
     "1wbls 3ft 10"
     "1wbls 3ft 100"
 )
@@ -103,17 +109,6 @@ python fit_single_config.py ${detector} ${shielding} ${neutrons_per_mw} ${fit_sc
 EOF
             
             echo "Submitted: ${job_name}"
-            
-        done
+                    done
     done
 done
-
-echo "=================="
-echo "All jobs submitted!"
-echo ""
-echo "To check job status: squeue -u \$USER"
-echo "To check logs: ls -lth ${LOG_DIR}/"
-echo ""
-echo "After all jobs complete, run:"
-echo "  cd ${BASE_DIR}"
-echo "  python plot_results.py"

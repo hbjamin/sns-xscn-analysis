@@ -1,11 +1,4 @@
 #!/usr/bin/env python
-"""
-Store reconstructed energy and direction in compressed .npz files
-for all events from specified root files with Nhit > 0
-
-Updated: Now uses relative paths from config
-"""
-
 import numpy as np
 import uproot
 import awkward as ak
@@ -24,28 +17,28 @@ ALPHA_1WBLS = cfg.ALPHA_1WBLS
 # They are left as absolute paths since they reference data outside the project
 CHANNELS = {
     'water': {
-        'alpha': ALPHA_WATER, 
-        'channels': {
-            'nueGa71': '/nfs/disk1/users/bharris/eos/sim/outputs/sns/gallium-rat-water/task_*.ntuple.root',
-            'eES': '/nfs/disk1/users/bharris/eos/sim/outputs/sns/es-rat-water/task_*.ntuple.root',
-            'cosmics': '/nfs/disk1/users/bharris/eos/sim/outputs/sns/cosmics-rat-water-merged/task_*.root',
-            'nueO16': '/nfs/disk1/users/bharris/eos/sim/outputs/sns/newton-rat-water/task_*.ntuple.root',
-            'neutrons_0ft': '/nfs/disk1/users/bharris/eos/sim/outputs/sns/neutrons-rat-water-0ft/task_*.root',
-            'neutrons_1ft': '/nfs/disk1/users/bharris/eos/sim/outputs/sns/neutrons-rat-water-1ft/task_*.root',
-            'neutrons_3ft': '/nfs/disk1/users/bharris/eos/sim/outputs/sns/neutrons-rat-water-3ft/task_*.root',
-        },
-        'reverse_direction': {'nueO16': True}
+       'alpha': ALPHA_WATER, 
+       'channels': {
+        #    'nueGa71': '/nfs/disk1/users/bharris/eos/sim/outputs/sns/gallium-rat-water/task_*.ntuple.root',
+           'eES': '/nfs/disk1/users/bharris/eos/sim/outputs/sns/es-rat-water/task_*.ntuple.root',
+           'cosmics': '/nfs/disk1/users/bharris/eos/sim/outputs/sns/cosmics-rat-water-merged/task_*.root',
+           'nueO16': '/nfs/disk1/users/bharris/eos/sim/outputs/sns/newton-rat-water/task_*.ntuple.root',
+           'neutrons_0ft': '/nfs/disk1/users/bharris/eos/sim/outputs/sns/neutrons-rat-water-0ft/task_*.root',
+           'neutrons_1ft': '/nfs/disk1/users/bharris/eos/sim/outputs/sns/neutrons-rat-water-1ft/task_*.root',
+           'neutrons_3ft': '/nfs/disk1/users/bharris/eos/sim/outputs/sns/neutrons-rat-water-3ft/task_*.root',
+       },
+       'reverse_direction': {'nueO16': True}
     },
     '1wbls': {
         'alpha': ALPHA_1WBLS,
         'channels': {
-            'nueGa71': None, # need to make this 
+            #'nueGa71': None, # need to make this 
             'eES': '/nfs/disk1/users/bharris/eos/sim/outputs/sns/es-rat-1wbls/task_*.ntuple.root',
             'cosmics': '/nfs/disk1/users/bharris/eos/sim/outputs/sns/cosmics-rat-1wbls/task_*.ntuple.root',
             'nueO16': '/nfs/disk1/users/bharris/eos/sim/outputs/sns/newton-rat-1wbls/task_*.ntuple.root',
             'neutrons_0ft': '/nfs/disk1/users/bharris/eos/sim/outputs/sns/neutrons-rat-1wbls-0ft/task_*.root',
-            'neutrons_1ft': '/nfs/disk1/users/bharris/eos/sim/outputs/sns/neutrons-rat-1wbls-1ft/task_*.root',
-            'neutrons_3ft': '/nfs/disk1/users/bharris/eos/sim/outputs/sns/neutrons-rat-1wbls-3ft/task_*.root',
+            'neutrons_1ft': '/nfs/disk1/users/bharris/eos/sim/outputs/sns/neutrons-extra/neutrons-rat-1wbls-1ft/task_*.root',
+            'neutrons_3ft': '/nfs/disk1/users/bharris/eos/sim/outputs/sns/neutrons-extra/neutrons-rat-1wbls-3ft/task_*.root',
         },
         'reverse_direction': {'nueO16': True}
     }
@@ -53,21 +46,7 @@ CHANNELS = {
 
 
 def preprocess_channel(file_pattern, alpha, output_path, reverseXdir=False):
-    """
-    Process channel data and save to compressed npz file.
-    
-    Inputs 
-    ----------
-    file_pattern : str : Glob pattern for root files
-    alpha : float : Energy calibration constant
-    output_path : Path : Where to save the npz file
-    reverseXdir : bool : Whether to reverse direction
-        
-    Outputs 
-    -------
-    ntrig : int : Number of triggered events
-    nsim : int : Number of simulated events
-    """
+
     files = sorted(glob.glob(file_pattern))
     
     if len(files) == 0:
@@ -152,8 +131,6 @@ def preprocess_channel(file_pattern, alpha, output_path, reverseXdir=False):
     return ntrig, nsim
 
 def main():
-    """Main preprocessing pipeline."""
-    
     print("=" * 80)
     print("SNS DATA PREPROCESSING")
     print("=" * 80)
